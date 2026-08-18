@@ -1,0 +1,14 @@
+package:
+  name: puppy-cli
+  dependencies:
+    - console
+    - effect
+    - prelude
+    - puppy-lib
+  run:
+    main: Puppy.CLI.Main
+  test:
+    main: Test.Puppy.CLI.Main
+    dependencies:
+      - spec
+      - spec-node

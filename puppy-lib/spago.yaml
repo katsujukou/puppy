@@ -1,0 +1,10 @@
+package:
+  name: puppy-lib
+  dependencies:
+    - effect
+    - prelude
+  test:
+    main: Test.Puppy
+    dependencies:
+      - spec
+      - spec-node
