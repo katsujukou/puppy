@@ -1,0 +1,16 @@
+package:
+  name: puppy-runtime
+  dependencies:
+    - arrays
+    - either
+    - lists
+    - maybe
+    - prelude
+  test:
+    main: Test.Puppy.Runtime
+    dependencies:
+      - spec
+      - spec-node
+      - effect
+      - datetime
+      - now
