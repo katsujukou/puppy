@@ -7,8 +7,10 @@ package:
     - foldable-traversable
     - lists
     - maybe
+    - ordered-collections
     - prelude
     - strings
+    - tuples
   test:
     main: Test.Puppy
     dependencies:
