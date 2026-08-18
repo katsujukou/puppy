@@ -48,19 +48,18 @@ jobs:
       - uses: nicknovitski/nix-develop@v1
 
       - name: Build whole project
-        run: spago build
+        run: spago build --strict --pure
 
       - name: Test lib & cli packages
         run: |
-          spago test
-          spago test --no-build -m Test.Puppy
-          spago test --no-build -m Test.Puppy.CLI.Main
+          spago test -p puppy-lib -m Test.Puppy --pure
+          spago test -p puppy-cli -m Test.Puppy.CLI.Main --pure
 
       - name: Build & Test runtime (in clean environment)
         run: |
           rm -rf .spago output
           spago build -p puppy-runtime --strict
-          spago test -p puppy-runtime
+          spago test -p puppy-runtime --pure
 
       - name: Format check
         run: git ls-files '*.purs' | xargs purs-tidy check
