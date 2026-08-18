@@ -1,0 +1,517 @@
+-- | Recursive descent over the token stream produced by `Puppy.Syntax.Lexer`.
+-- |
+-- | The result mirrors the source. No name is resolved, no parameterised rule
+-- | is expanded and no conflict is looked for here; the one piece of meaning
+-- | this module enforces is that the reserved end-of-input name stays reserved,
+-- | because that is cheapest to report where the span is still at hand.
+-- |
+-- | A `{ ... }` block means a type in the declaration section and a semantic
+-- | action in the rules section. The lexer does not distinguish the two, so
+-- | deciding which is which is one of this module's jobs.
+module Puppy.Syntax.Parser
+  ( ParseError
+  , parseGrammar
+  , parse
+  ) where
+
+import Prelude
+
+import Data.Array as Array
+import Data.Either (Either(..))
+import Data.Foldable (traverse_)
+import Data.List (List(..), (:))
+import Data.List as List
+import Data.Maybe (Maybe(..), maybe)
+import Puppy.Syntax
+  ( Associativity(..)
+  , Code
+  , Element
+  , Grammar
+  , Pos
+  , PrecedenceDecl
+  , Production
+  , Rule
+  , Span
+  , StartDecl
+  , SymbolRef(..)
+  , TokenDecl
+  , TokenSource(..)
+  , TypeDecl
+  , eofToken
+  )
+import Puppy.Syntax.Lexer (LexToken(..), Located)
+import Puppy.Syntax.Lexer as Lexer
+
+type ParseError = { message :: String, span :: Span }
+
+type Named = { name :: String, span :: Span }
+
+--------------------------------------------------------------------------------
+-- A very small parser monad over the token array
+--------------------------------------------------------------------------------
+
+newtype Parser a =
+  Parser (Array Located -> Int -> Either ParseError { value :: a, next :: Int })
+
+unParser
+  :: forall a
+   . Parser a
+  -> Array Located
+  -> Int
+  -> Either ParseError { value :: a, next :: Int }
+unParser (Parser p) = p
+
+instance Functor Parser where
+  map f p = Parser \toks i ->
+    map (\r -> { value: f r.value, next: r.next }) (unParser p toks i)
+
+instance Apply Parser where
+  apply = ap
+
+instance Applicative Parser where
+  pure a = Parser \_ i -> Right { value: a, next: i }
+
+instance Bind Parser where
+  bind p f = Parser \toks i -> case unParser p toks i of
+    Left err -> Left err
+    Right r -> unParser (f r.value) toks r.next
+
+instance Monad Parser
+
+nowhere :: Pos
+nowhere = { offset: 0, line: 1, column: 1 }
+
+fatal :: forall a. String -> Span -> Parser a
+fatal message span = Parser \_ _ -> Left { message, span }
+
+-- | The token under the cursor, without consuming it.
+-- |
+-- | Running off the end is an error rather than a repeat of the last token.
+-- | Repeating it would let a loop that consumes identifiers spin forever on a
+-- | stream that never reaches `TEnd`; `parseGrammar` rejects such a stream up
+-- | front, and this makes the guarantee independent of that check.
+current :: Parser Located
+current = Parser \toks i -> case Array.index toks i of
+  Just t -> Right { value: t, next: i }
+  Nothing -> Left
+    { message: "unexpected end of the token stream"
+    , span: lastSpan toks
+    }
+
+lastSpan :: Array Located -> Span
+lastSpan toks = case Array.last toks of
+  Just t -> t.span
+  Nothing -> { start: nowhere, end: nowhere }
+
+advance :: Parser Unit
+advance = Parser \_ i -> Right { value: unit, next: i + 1 }
+
+-- | Consume the token under the cursor if it is the one expected.
+expect :: LexToken -> String -> Parser Unit
+expect wanted what = do
+  t <- current
+  if t.token == wanted then advance
+  else fatal ("expected " <> what <> ", found " <> describe t.token) t.span
+
+describe :: LexToken -> String
+describe = case _ of
+  TIdent name -> "`" <> name <> "`"
+  TKeyword name -> "`%" <> name <> "`"
+  THeader _ -> "a `%{ ... %}` header"
+  TSeparator -> "`%%`"
+  TBraced _ -> "a `{ ... }` block"
+  TString s -> "the string " <> show s
+  TColon -> "`:`"
+  TBar -> "`|`"
+  TComma -> "`,`"
+  TEquals -> "`=`"
+  TSemi -> "`;`"
+  TLParen -> "`(`"
+  TRParen -> "`)`"
+  TEnd -> "end of file"
+
+--------------------------------------------------------------------------------
+-- Small building blocks
+--------------------------------------------------------------------------------
+
+-- | Close off a "first item, then a reverse-accumulated tail" loop. Reversing
+-- | the whole of `first : rest` instead is the obvious mistake: it sends the
+-- | first item to the end.
+finish1 :: forall a. a -> List a -> Array a
+finish1 first rest = Array.fromFoldable (first : List.reverse rest)
+
+identifier :: String -> Parser Named
+identifier what = do
+  t <- current
+  case t.token of
+    TIdent name -> advance $> { name, span: t.span }
+    _ -> fatal ("expected " <> what <> ", found " <> describe t.token) t.span
+
+-- | One or more identifiers, as every declaration that names symbols accepts.
+identifiers1 :: String -> Parser (Array Named)
+identifiers1 what = do
+  first <- identifier what
+  rest <- loop Nil
+  pure (finish1 first rest)
+  where
+  loop acc = do
+    t <- current
+    case t.token of
+      TIdent name -> do
+        advance
+        loop ({ name, span: t.span } : acc)
+      _ -> pure acc
+
+-- | A `{ ... }` in a position where a type may or may not appear.
+optionalType :: Parser (Maybe Code)
+optionalType = do
+  t <- current
+  case t.token of
+    TBraced code -> advance $> Just code
+    _ -> pure Nothing
+
+requiredType :: String -> Parser Code
+requiredType what = do
+  t <- current
+  case t.token of
+    TBraced code -> advance $> code
+    _ -> fatal
+      ( "expected a `{ ... }` type annotation after " <> what <> ", found "
+          <> describe t.token
+      )
+      t.span
+
+-- | The end-of-input terminal belongs to Puppy, not to the grammar. Every
+-- | position where a grammar can name a symbol has to say so, or the promise
+-- | that `EOF` is reserved is only half kept.
+checkNotReserved :: String -> Span -> String -> Parser Unit
+checkNotReserved name span role =
+  when (name == eofToken.name) do
+    fatal
+      ( "`" <> eofToken.name
+          <> "` is reserved for end of input and cannot be "
+          <> role
+          <> "; Puppy declares it and the generated wrapper appends it to the token stream"
+      )
+      span
+
+checkNoneReserved :: String -> Array Named -> Parser Unit
+checkNoneReserved role = traverse_ \n -> checkNotReserved n.name n.span role
+
+--------------------------------------------------------------------------------
+-- Declarations
+--------------------------------------------------------------------------------
+
+type Decls =
+  { tokens :: List TokenDecl
+  , starts :: List StartDecl
+  , types :: List TypeDecl
+  , precedences :: List PrecedenceDecl
+  }
+
+emptyDecls :: Decls
+emptyDecls = { tokens: Nil, starts: Nil, types: Nil, precedences: Nil }
+
+declarations :: Decls -> Parser Decls
+declarations acc = do
+  t <- current
+  case t.token of
+    TSeparator -> pure acc
+    TEnd -> fatal "expected `%%` before the end of the file" t.span
+    TKeyword "token" -> advance *> tokenDecls acc >>= declarations
+    TKeyword "start" -> advance *> startDecls acc >>= declarations
+    TKeyword "type" -> advance *> typeDecls acc >>= declarations
+    TKeyword "left" ->
+      advance *> precedenceDecls AssocLeft t.span acc >>= declarations
+    TKeyword "right" ->
+      advance *> precedenceDecls AssocRight t.span acc >>= declarations
+    TKeyword "nonassoc" ->
+      advance *> precedenceDecls AssocNone t.span acc >>= declarations
+    _ -> fatal
+      ("unexpected " <> describe t.token <> " in the declaration section")
+      t.span
+
+-- | `%token { Payload }? (NAME "display"?)+`
+tokenDecls :: Decls -> Parser Decls
+tokenDecls acc = do
+  payload <- optionalType
+  decls <- loop payload Nil true
+  pure acc { tokens = decls <> acc.tokens }
+  where
+  loop payload found first = do
+    t <- current
+    case t.token of
+      TIdent name -> do
+        advance
+        checkNotReserved name t.span "declared"
+        display <- displayName name
+        loop payload
+          ({ name, constructor: name, display, payload, span: t.span } : found)
+          false
+      _
+        | first ->
+            fatal ("expected a token name, found " <> describe t.token) t.span
+        | otherwise -> pure found
+
+  displayName fallback = do
+    t <- current
+    case t.token of
+      TString s -> advance $> s
+      _ -> pure fallback
+
+-- | `%start { Result } name+`
+startDecls :: Decls -> Parser Decls
+startDecls acc = do
+  resultType <- requiredType "`%start`"
+  names <- identifiers1 "a start symbol"
+  checkNoneReserved "declared as a start symbol" names
+  pure acc
+    { starts =
+        List.reverse (List.fromFoldable (map (toDecl resultType) names))
+          <> acc.starts
+    }
+  where
+  toDecl resultType n = { symbol: n.name, resultType, span: n.span }
+
+-- | `%type { Result } name+`
+typeDecls :: Decls -> Parser Decls
+typeDecls acc = do
+  resultType <- requiredType "`%type`"
+  names <- identifiers1 "a nonterminal name"
+  checkNoneReserved "given a type" names
+  pure acc
+    { types =
+        List.reverse (List.fromFoldable (map (toDecl resultType) names))
+          <> acc.types
+    }
+  where
+  toDecl resultType n = { symbol: n.name, resultType, span: n.span }
+
+-- | `%left`, `%right`, `%nonassoc`. Priority comes from the order these appear
+-- | in, so they are kept in source order by the assembly step below.
+precedenceDecls :: Associativity -> Span -> Decls -> Parser Decls
+precedenceDecls associativity span acc = do
+  names <- identifiers1 "a token name"
+  checkNoneReserved "given a precedence" names
+  pure acc
+    { precedences =
+        { associativity, tokens: map _.name names, span } : acc.precedences
+    }
+
+--------------------------------------------------------------------------------
+-- Rules
+--------------------------------------------------------------------------------
+
+rules :: List Rule -> Parser (List Rule)
+rules acc = do
+  t <- current
+  case t.token of
+    TEnd -> pure acc
+    _ -> do
+      r <- rule
+      rules (r : acc)
+
+rule :: Parser Rule
+rule = do
+  start <- current
+  inline <- inlineFlag
+  head <- identifier "a rule name"
+  checkNotReserved head.name head.span "used as a rule name"
+  parameters <- ruleParameters
+  expect TColon "`:` after the rule name"
+  prods <- productions
+  end <- optionalSemi
+  pure
+    { name: head.name
+    , parameters
+    , inline
+    , productions: prods
+    , span: { start: start.span.start, end }
+    }
+  where
+  inlineFlag = do
+    t <- current
+    case t.token of
+      TKeyword "inline" -> advance $> true
+      _ -> pure false
+
+  optionalSemi = do
+    t <- current
+    case t.token of
+      TSemi -> advance $> t.span.end
+      _ -> pure t.span.start
+
+-- | `(A, B)` after a rule name makes it a parameterised rule.
+ruleParameters :: Parser (Array String)
+ruleParameters = do
+  t <- current
+  case t.token of
+    TLParen -> do
+      advance
+      names <- commaSeparated (identifier "a parameter name")
+      expect TRParen "`)` after the parameter list"
+      checkNoneReserved "used as a rule parameter" names
+      pure (map _.name names)
+    _ -> pure []
+
+commaSeparated :: forall a. Parser a -> Parser (Array a)
+commaSeparated item = do
+  first <- item
+  rest <- loop Nil
+  pure (finish1 first rest)
+  where
+  loop acc = do
+    t <- current
+    case t.token of
+      TComma -> do
+        advance
+        x <- item
+        loop (x : acc)
+      _ -> pure acc
+
+-- | One or more alternatives. A leading `|` is allowed but not required, which
+-- | is what lets every alternative be written with one.
+productions :: Parser (Array Production)
+productions = do
+  leading <- current
+  when (leading.token == TBar) advance
+  first <- production
+  rest <- loop Nil
+  pure (finish1 first rest)
+  where
+  loop acc = do
+    t <- current
+    case t.token of
+      TBar -> do
+        advance
+        p <- production
+        loop (p : acc)
+      _ -> pure acc
+
+production :: Parser Production
+production = do
+  start <- current
+  elements <- productionElements Nil
+  precedence <- precedenceOverride
+  t <- current
+  case t.token of
+    TBraced action -> do
+      advance
+      pure
+        { elements
+        , precedence
+        , action
+        , span: { start: start.span.start, end: t.span.end }
+        }
+    _ -> fatal
+      ("expected a `{ ... }` semantic action, found " <> describe t.token)
+      t.span
+  where
+  precedenceOverride = do
+    t <- current
+    case t.token of
+      TKeyword "prec" -> do
+        advance
+        tok <- identifier "a token name after `%prec`"
+        checkNotReserved tok.name tok.span "used with `%prec`"
+        pure (Just tok.name)
+      _ -> pure Nothing
+
+productionElements :: List Element -> Parser (Array Element)
+productionElements acc = do
+  t <- current
+  case t.token of
+    TIdent _ -> do
+      e <- element
+      productionElements (e : acc)
+    _ -> pure (Array.fromFoldable (List.reverse acc))
+
+-- | `binder = symbol` or just `symbol`.
+element :: Parser Element
+element = do
+  start <- current
+  binder <- binderName
+  symbol <- symbolRef
+  end <- current
+  pure
+    { binder
+    , symbol
+    , span: { start: start.span.start, end: end.span.start }
+    }
+  where
+  -- A name is a binder only when an `=` follows it; otherwise it is the symbol.
+  binderName = Parser \toks i ->
+    case Array.index toks i, Array.index toks (i + 1) of
+      Just { token: TIdent name }, Just { token: TEquals } ->
+        Right { value: Just name, next: i + 2 }
+      _, _ -> Right { value: Nothing, next: i }
+
+symbolRef :: Parser SymbolRef
+symbolRef = do
+  head <- identifier "a symbol name"
+  checkNotReserved head.name head.span "referred to in a rule"
+  t <- current
+  case t.token of
+    TLParen -> do
+      advance
+      args <- commaSeparated symbolRef
+      expect TRParen "`)` after the argument list"
+      pure (SymbolRef head.name args)
+    _ -> pure (SymbolRef head.name [])
+
+--------------------------------------------------------------------------------
+-- Entry points
+--------------------------------------------------------------------------------
+
+grammar :: Parser Grammar
+grammar = do
+  header <- optionalHeader
+  decls <- declarations emptyDecls
+  expect TSeparator "`%%` between the declarations and the rules"
+  rs <- rules Nil
+  expect TEnd "end of file"
+  pure
+    { header
+    , tokens: GeneratedTokens (Array.fromFoldable (List.reverse decls.tokens))
+    , starts: Array.fromFoldable (List.reverse decls.starts)
+    , types: Array.fromFoldable (List.reverse decls.types)
+    , precedences: Array.fromFoldable (List.reverse decls.precedences)
+    , rules: Array.fromFoldable (List.reverse rs)
+    }
+  where
+  optionalHeader = do
+    t <- current
+    case t.token of
+      THeader code -> advance $> Just code
+      _ -> pure Nothing
+
+-- | Parse an already-lexed grammar.
+-- |
+-- | The stream has to be one the lexer could have produced, and that takes two
+-- | checks rather than one. It has to end with `TEnd`, which is what guarantees
+-- | the loops above always meet a token that stops them. And the parse has to
+-- | have consumed all of it: a stream carrying a `TEnd` somewhere in the middle
+-- | would otherwise finish there and quietly discard everything after it.
+parseGrammar :: Array Located -> Either ParseError Grammar
+parseGrammar toks = case Array.last toks of
+  Just { token: TEnd } -> case unParser grammar toks 0 of
+    Left err -> Left err
+    Right r
+      | r.next == Array.length toks -> Right r.value
+      | otherwise -> Left
+          { message: "unexpected tokens after the end of the grammar"
+          , span: maybe (lastSpan toks) _.span (Array.index toks r.next)
+          }
+  _ -> Left
+    { message: "the token stream does not end with an end-of-file token"
+    , span: lastSpan toks
+    }
+
+-- | Lex and parse a grammar file.
+parse :: String -> Either ParseError Grammar
+parse source = case Lexer.lex source of
+  Left err -> Left
+    { message: err.message
+    , span: { start: err.pos, end: err.pos }
+    }
+  Right toks -> parseGrammar toks

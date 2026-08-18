@@ -22,12 +22,19 @@
         "path": "puppy-lib",
         "core": {
           "dependencies": [
+            "arrays",
             "effect",
-            "prelude"
+            "either",
+            "foldable-traversable",
+            "lists",
+            "maybe",
+            "prelude",
+            "strings"
           ]
         },
         "test": {
           "dependencies": [
+            "aff",
             "spec",
             "spec-node"
           ]

@@ -3,13 +3,12 @@ module Test.Puppy where
 import Prelude
 
 import Effect (Effect)
-import Test.Spec (describe, it)
-import Test.Spec.Assertions (shouldEqual)
+import Test.Puppy.Syntax.Lexer as Lexer
+import Test.Puppy.Syntax.Parser as Parser
 import Test.Spec.Reporter (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 
 main :: Effect Unit
-main = runSpecAndExitProcess [consoleReporter] do
-  describe "Puppy" do
-    it "should add some tests!" do
-      42 `shouldEqual` (40 + 2)
+main = runSpecAndExitProcess [ consoleReporter ] do
+  Lexer.spec
+  Parser.spec

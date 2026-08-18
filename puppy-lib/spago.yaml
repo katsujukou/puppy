@@ -1,10 +1,17 @@
 package:
   name: puppy-lib
   dependencies:
+    - arrays
     - effect
+    - either
+    - foldable-traversable
+    - lists
+    - maybe
     - prelude
+    - strings
   test:
     main: Test.Puppy
     dependencies:
+      - aff
       - spec
       - spec-node
