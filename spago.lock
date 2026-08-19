@@ -37,6 +37,8 @@
         "test": {
           "dependencies": [
             "aff",
+            "datetime",
+            "now",
             "spec",
             "spec-node"
           ]

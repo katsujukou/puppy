@@ -16,4 +16,6 @@ package:
     dependencies:
       - aff
       - spec
+      - datetime
+      - now
       - spec-node
