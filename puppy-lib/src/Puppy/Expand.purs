@@ -485,22 +485,30 @@ generate env start = go (List.fromFoldable start) Set.empty 0 Nil Set.empty
                           (Array.length args)
                       , span: next.span
                       }
-                  | otherwise -> do
+                  | otherwise ->
                       let
                         subst = Map.fromFoldable
                           (Array.zipWith Tuple rule.parameters args)
-                      results <- traverse (instantiateProduction env subst name)
-                        rule.productions
-                      go
-                        ( List.fromFoldable (Array.concatMap _.pending results)
-                            <> rest
-                        )
-                        (Set.insert name seen)
-                        (count + 1)
-                        (Array.foldl (\a r -> r.production : a) acc results)
-                        ( if rule.inline then Set.insert name inlines
-                          else inlines
-                        )
+                      in
+                        -- Deliberately a `case` and not a `do`: under a bind
+                        -- the call below stops being a tail call, and the
+                        -- worklist would then cost one stack frame per rule
+                        -- instance rather than none.
+                        case
+                          traverse (instantiateProduction env subst name)
+                            rule.productions
+                          of
+                          Left err -> Left err
+                          Right results -> go
+                            ( List.fromFoldable
+                                (Array.concatMap _.pending results) <> rest
+                            )
+                            (Set.insert name seen)
+                            (count + 1)
+                            (Array.foldl (\a r -> r.production : a) acc results)
+                            ( if rule.inline then Set.insert name inlines
+                              else inlines
+                            )
 
 --------------------------------------------------------------------------------
 -- Folding away %inline rules

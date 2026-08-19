@@ -45,6 +45,14 @@ chain n = "%token A\n%start { X } main\n%%\nmain: |"
   <> joinWith "" (map (\i -> " x" <> show i <> " = one") (Array.range 1 n))
   <> " { 1 }\n%inline one: | A { O }\n"
 
+-- | A grammar with `n` rules, all of them reached. Instantiation walks a
+-- | worklist, so this should cost no stack at all.
+manyRules :: Int -> String
+manyRules n = "%token P\n%start { X } main\n%%\nmain: |"
+  <> joinWith "" (map (\i -> " t" <> show i) (Array.range 1 n))
+  <> " { R }\n"
+  <> joinWith "" (map (\i -> "t" <> show i <> ": | P { R }\n") (Array.range 1 n))
+
 shouldFailWith :: String -> String -> Aff Unit
 shouldFailWith needle source = case expanded source of
   Right _ -> fail ("expected a failure mentioning " <> show needle)
@@ -415,3 +423,9 @@ main: | x = loop { x }
 
     it "stops a chain long enough for the rewriting to run away" do
       shouldFailWith "units of work" (chain 3000)
+
+    -- A worklist is only worth having if the loop around it stays a tail call.
+    -- Threading the result through `Either` with a `do` block quietly turns it
+    -- back into recursion, one frame per rule instance.
+    it "instantiates thousands of rules without a frame for each" do
+      map Array.length (productionsOf (manyRules 3000)) `shouldEqual` Right 3001
