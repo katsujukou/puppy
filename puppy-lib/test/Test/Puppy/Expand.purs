@@ -429,3 +429,47 @@ main: | x = loop { x }
     -- back into recursion, one frame per rule instance.
     it "instantiates thousands of rules without a frame for each" do
       map Array.length (productionsOf (manyRules 3000)) `shouldEqual` Right 3001
+
+  -- A grammar's names do not all end up in the same place, and each place has
+  -- its own rules. Accepting one that breaks them means reporting the problem
+  -- later, against generated code nobody wrote.
+  describe "names that have to survive into PureScript" do
+    it "rejects a token name that cannot be a constructor" do
+      shouldFailWith "begin with a capital letter"
+        "%token plus\n%start { X } main\n%%\nmain: | plus { 1 }\n"
+
+    it "rejects a start symbol that cannot be a value" do
+      shouldFailWith "begin with a lower case letter"
+        "%token A\n%start { X } Main\n%%\nMain: | A { 1 }\n"
+
+    it "rejects a start symbol the generated parser already uses" do
+      shouldFailWith "already uses"
+        "%token A\n%start { X } tableFor\n%%\ntableFor: | A { 1 }\n"
+
+    it "rejects a binder that is a reserved word" do
+      shouldFailWith "cannot be a PureScript value"
+        "%token A\n%start { X } main\n%%\nmain: | let = A { 1 }\n"
+
+    it "rejects a class it does not know how to derive" do
+      shouldFailWith "knows how to derive"
+        "%token A\n%derive Functor\n%start { X } main\n%%\nmain: | A { 1 }\n"
+
+    it "rejects the same class derived twice" do
+      shouldFailWith "derived more than once"
+        "%token A\n%derive Eq Eq\n%start { X } main\n%%\nmain: | A { 1 }\n"
+
+    -- `_` is a wildcard, not a name: an export list containing one does not
+    -- parse.
+    it "rejects a bare underscore as a start symbol" do
+      shouldFailWith "cannot be a PureScript value"
+        "%token A\n%start { X } _\n%%\n_: | A { 1 }\n"
+
+    it "rejects a bare underscore as a binder" do
+      shouldFailWith "cannot be a PureScript value"
+        "%token A\n%start { X } main\n%%\nmain: | _ = A { 1 }\n"
+
+    -- Names the generator uses for its own locals are no longer a problem: it
+    -- keeps them under a prefix of its own.
+    it "accepts a start symbol named after a generated local" do
+      productionsOf "%token A\n%start { X } input\n%%\ninput: | A { 1 }\n"
+        `shouldEqual` Right [ "input -> A" ]

@@ -24,7 +24,15 @@ import Prim hiding (Symbol)
 import Data.Array as Array
 import Data.Maybe (Maybe)
 import Data.String.Common (joinWith)
-import Puppy.Syntax (Code, PrecedenceDecl, Span, StartDecl, TokenDecl, TypeDecl)
+import Puppy.Syntax
+  ( Code
+  , DeriveDecl
+  , PrecedenceDecl
+  , Span
+  , StartDecl
+  , TokenDecl
+  , TypeDecl
+  )
 
 data Symbol
   = Terminal String
@@ -97,6 +105,7 @@ type Grammar =
   , terminals :: Array TokenDecl
   , precedences :: Array PrecedenceDecl
   , types :: Array TypeDecl
+  , derives :: Array DeriveDecl
   , starts :: Array StartDecl
   , productions :: Array Production
   }

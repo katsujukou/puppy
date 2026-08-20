@@ -39,6 +39,7 @@ import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Puppy.Grammar (Action(..), Bound(..), Production, Symbol(..))
 import Puppy.Grammar as Grammar
+import Puppy.Names as Names
 import Puppy.Syntax (Pos, Span, SymbolRef(..))
 import Puppy.Syntax as Syntax
 
@@ -160,6 +161,12 @@ validate syn = Array.concat
   , Array.concatMap undeclaredPrecedence precedenceNames
   , Array.concatMap unknownTyped syn.types
   , startErrors
+  , Array.concatMap badTokenName (tokensOf syn)
+  , Array.concatMap badStartName syn.starts
+  , Array.concatMap unknownDerive syn.derives
+  , duplicateErrors
+      (\n -> "`" <> n <> "` is derived more than once")
+      (map (\d -> { name: d.name, span: d.span }) syn.derives)
   , inlineCycleErrors syn
   , Array.concatMap (validateRule env) syn.rules
   ]
@@ -188,6 +195,45 @@ validate syn = Array.concat
         [ { message: "`" <> n.name
               <> "` is given a precedence but is not a declared token"
           , span: n.span
+          }
+        ]
+
+  -- A token name becomes a data constructor, so it has to look like one.
+  badTokenName decl
+    | Names.isConstructor decl.name = []
+    | otherwise =
+        [ { message: "token `" <> decl.name
+              <> "` cannot be a PureScript constructor; a token name has to begin with a capital letter"
+          , span: decl.span
+          }
+        ]
+
+  -- A start symbol becomes a top-level function in the generated module,
+  -- beside the ones the generator writes itself.
+  badStartName s
+    | not (Names.isValue s.symbol) =
+        [ { message: "start symbol `" <> s.symbol
+              <> "` cannot be a PureScript value; it has to begin with a lower case letter and must not be a reserved word"
+          , span: s.span
+          }
+        ]
+    | Names.takenByGeneratedCode s.symbol =
+        [ { message: "start symbol `" <> s.symbol
+              <> "` is a name the generated parser already uses"
+          , span: s.span
+          }
+        ]
+    | otherwise = []
+
+  -- Only the classes whose demands on a payload type can be stated. A token
+  -- may carry something with no `Eq` at all, which is why these are asked for
+  -- rather than assumed.
+  unknownDerive d
+    | Array.elem d.name [ "Eq", "Show" ] = []
+    | otherwise =
+        [ { message: "`" <> d.name
+              <> "` cannot be derived for the token type; Puppy knows how to derive `Eq` and `Show`"
+          , span: d.span
           }
         ]
 
@@ -296,6 +342,7 @@ validateProduction env params prod = Array.concat
   [ duplicateErrors (\n -> "binder `" <> n <> "` is declared more than once")
       binderNames
   , precErrors
+  , Array.concatMap badBinder binderNames
   , Array.concatMap
       (\el -> validateRef env params true el.span el.symbol)
       prod.elements
@@ -304,6 +351,16 @@ validateProduction env params prod = Array.concat
   binderNames = Array.mapMaybe
     (\e -> map (\b -> { name: b, span: e.span }) e.binder)
     prod.elements
+
+  -- A binder becomes a `let` binding around the author's own code.
+  badBinder n
+    | Names.isValue n.name = []
+    | otherwise =
+        [ { message: "binder `" <> n.name
+              <> "` cannot be a PureScript value; it has to begin with a lower case letter and must not be a reserved word"
+          , span: n.span
+          }
+        ]
 
   precErrors = case prod.precedence of
     Nothing -> []
@@ -715,6 +772,7 @@ build syn = do
     , terminals: tokensOf syn
     , precedences: syn.precedences
     , types: syn.types
+    , derives: syn.derives
     , starts: syn.starts
     , productions
     }

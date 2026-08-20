@@ -37,6 +37,7 @@ import Puppy.Syntax
   , TokenDecl
   , TokenSource(..)
   , TypeDecl
+  , DeriveDecl
   , eofToken
   )
 import Puppy.Syntax.Lexer (LexToken(..), Located)
@@ -80,6 +81,21 @@ instance Monad Parser
 
 nowhere :: Pos
 nowhere = { offset: 0, line: 1, column: 1 }
+
+-- | Repeat a step until it declines, without a stack frame per repetition.
+-- |
+-- | The obvious spelling -- `do x <- step; loop (x : acc)` -- puts the
+-- | recursive call under a bind, where it stops being a tail call. One frame
+-- | per repetition is nothing for the symbols of a production and fatal for a
+-- | file's worth of rules.
+repeatedly :: forall a. (a -> Parser (Maybe a)) -> a -> Parser a
+repeatedly step seed = Parser \toks i0 -> go toks seed i0
+  where
+  go toks acc i = case unParser (step acc) toks i of
+    Left err -> Left err
+    Right r -> case r.value of
+      Nothing -> Right { value: acc, next: r.next }
+      Just grown -> go toks grown r.next
 
 fatal :: forall a. String -> Span -> Parser a
 fatal message span = Parser \_ _ -> Left { message, span }
@@ -151,16 +167,16 @@ identifier what = do
 identifiers1 :: String -> Parser (Array Named)
 identifiers1 what = do
   first <- identifier what
-  rest <- loop Nil
+  rest <- repeatedly step Nil
   pure (finish1 first rest)
   where
-  loop acc = do
+  step acc = do
     t <- current
     case t.token of
       TIdent name -> do
         advance
-        loop ({ name, span: t.span } : acc)
-      _ -> pure acc
+        pure (Just ({ name, span: t.span } : acc))
+      _ -> pure Nothing
 
 -- | A `{ ... }` in a position where a type may or may not appear.
 optionalType :: Parser (Maybe Code)
@@ -206,52 +222,62 @@ type Decls =
   { tokens :: List TokenDecl
   , starts :: List StartDecl
   , types :: List TypeDecl
+  , derives :: List DeriveDecl
   , precedences :: List PrecedenceDecl
   }
 
 emptyDecls :: Decls
-emptyDecls = { tokens: Nil, starts: Nil, types: Nil, precedences: Nil }
+emptyDecls =
+  { tokens: Nil, starts: Nil, types: Nil, precedences: Nil, derives: Nil }
 
 declarations :: Decls -> Parser Decls
-declarations acc = do
-  t <- current
-  case t.token of
-    TSeparator -> pure acc
-    TEnd -> fatal "expected `%%` before the end of the file" t.span
-    TKeyword "token" -> advance *> tokenDecls acc >>= declarations
-    TKeyword "start" -> advance *> startDecls acc >>= declarations
-    TKeyword "type" -> advance *> typeDecls acc >>= declarations
-    TKeyword "left" ->
-      advance *> precedenceDecls AssocLeft t.span acc >>= declarations
-    TKeyword "right" ->
-      advance *> precedenceDecls AssocRight t.span acc >>= declarations
-    TKeyword "nonassoc" ->
-      advance *> precedenceDecls AssocNone t.span acc >>= declarations
-    _ -> fatal
-      ("unexpected " <> describe t.token <> " in the declaration section")
-      t.span
+declarations = repeatedly step
+  where
+  step acc = do
+    t <- current
+    case t.token of
+      TSeparator -> pure Nothing
+      TEnd -> fatal "expected `%%` before the end of the file" t.span
+      TKeyword "token" -> advance *> map Just (tokenDecls acc)
+      TKeyword "start" -> advance *> map Just (startDecls acc)
+      TKeyword "type" -> advance *> map Just (typeDecls acc)
+      TKeyword "derive" -> advance *> map Just (deriveDecls acc)
+      TKeyword "left" ->
+        advance *> map Just (precedenceDecls AssocLeft t.span acc)
+      TKeyword "right" ->
+        advance *> map Just (precedenceDecls AssocRight t.span acc)
+      TKeyword "nonassoc" ->
+        advance *> map Just (precedenceDecls AssocNone t.span acc)
+      _ -> fatal
+        ("unexpected " <> describe t.token <> " in the declaration section")
+        t.span
 
 -- | `%token { Payload }? (NAME "display"?)+`
 tokenDecls :: Decls -> Parser Decls
 tokenDecls acc = do
   payload <- optionalType
-  decls <- loop payload Nil true
-  pure acc { tokens = decls <> acc.tokens }
+  read <- repeatedly (step payload) { found: Nil, first: true }
+  pure acc { tokens = read.found <> acc.tokens }
   where
-  loop payload found first = do
+  step payload read = do
     t <- current
     case t.token of
       TIdent name -> do
         advance
         checkNotReserved name t.span "declared"
         display <- displayName name
-        loop payload
-          ({ name, constructor: name, display, payload, span: t.span } : found)
-          false
+        pure
+          ( Just read
+              { found =
+                  { name, constructor: name, display, payload, span: t.span }
+                    : read.found
+              , first = false
+              }
+          )
       _
-        | first ->
+        | read.first ->
             fatal ("expected a token name, found " <> describe t.token) t.span
-        | otherwise -> pure found
+        | otherwise -> pure Nothing
 
   displayName fallback = do
     t <- current
@@ -287,6 +313,12 @@ typeDecls acc = do
   where
   toDecl resultType n = { symbol: n.name, resultType, span: n.span }
 
+-- | `%derive Eq Show`
+deriveDecls :: Decls -> Parser Decls
+deriveDecls acc = do
+  names <- identifiers1 "a class name"
+  pure acc { derives = List.reverse (List.fromFoldable names) <> acc.derives }
+
 -- | `%left`, `%right`, `%nonassoc`. Priority comes from the order these appear
 -- | in, so they are kept in source order by the assembly step below.
 precedenceDecls :: Associativity -> Span -> Decls -> Parser Decls
@@ -303,13 +335,15 @@ precedenceDecls associativity span acc = do
 --------------------------------------------------------------------------------
 
 rules :: List Rule -> Parser (List Rule)
-rules acc = do
-  t <- current
-  case t.token of
-    TEnd -> pure acc
-    _ -> do
-      r <- rule
-      rules (r : acc)
+rules = repeatedly step
+  where
+  step acc = do
+    t <- current
+    case t.token of
+      TEnd -> pure Nothing
+      _ -> do
+        r <- rule
+        pure (Just (r : acc))
 
 rule :: Parser Rule
 rule = do
@@ -357,17 +391,17 @@ ruleParameters = do
 commaSeparated :: forall a. Parser a -> Parser (Array a)
 commaSeparated item = do
   first <- item
-  rest <- loop Nil
+  rest <- repeatedly step Nil
   pure (finish1 first rest)
   where
-  loop acc = do
+  step acc = do
     t <- current
     case t.token of
       TComma -> do
         advance
         x <- item
-        loop (x : acc)
-      _ -> pure acc
+        pure (Just (x : acc))
+      _ -> pure Nothing
 
 -- | One or more alternatives. A leading `|` is allowed but not required, which
 -- | is what lets every alternative be written with one.
@@ -376,17 +410,17 @@ productions = do
   leading <- current
   when (leading.token == TBar) advance
   first <- production
-  rest <- loop Nil
+  rest <- repeatedly step Nil
   pure (finish1 first rest)
   where
-  loop acc = do
+  step acc = do
     t <- current
     case t.token of
       TBar -> do
         advance
         p <- production
-        loop (p : acc)
-      _ -> pure acc
+        pure (Just (p : acc))
+      _ -> pure Nothing
 
 production :: Parser Production
 production = do
@@ -418,13 +452,16 @@ production = do
       _ -> pure Nothing
 
 productionElements :: List Element -> Parser (Array Element)
-productionElements acc = do
-  t <- current
-  case t.token of
-    TIdent _ -> do
-      e <- element
-      productionElements (e : acc)
-    _ -> pure (Array.fromFoldable (List.reverse acc))
+productionElements seed =
+  map (Array.fromFoldable <<< List.reverse) (repeatedly step seed)
+  where
+  step acc = do
+    t <- current
+    case t.token of
+      TIdent _ -> do
+        e <- element
+        pure (Just (e : acc))
+      _ -> pure Nothing
 
 -- | `binder = symbol` or just `symbol`.
 element :: Parser Element
@@ -476,6 +513,7 @@ grammar = do
     , starts: Array.fromFoldable (List.reverse decls.starts)
     , types: Array.fromFoldable (List.reverse decls.types)
     , precedences: Array.fromFoldable (List.reverse decls.precedences)
+    , derives: Array.fromFoldable (List.reverse decls.derives)
     , rules: Array.fromFoldable (List.reverse rs)
     }
   where

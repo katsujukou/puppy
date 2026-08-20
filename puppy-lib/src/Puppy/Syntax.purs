@@ -21,6 +21,7 @@ module Puppy.Syntax
   , TokenDecl
   , StartDecl
   , TypeDecl
+  , DeriveDecl
   , PrecedenceDecl
   , SymbolRef(..)
   , Element
@@ -113,6 +114,16 @@ type TypeDecl =
   , span :: Span
   }
 
+-- | `%derive Eq Show` -- instances to put on the generated token type.
+-- |
+-- | Opt-in because they are not free: `Eq` and a `Show` that prints payloads
+-- | both demand the same of every payload type, and a token can perfectly well
+-- | carry something that has neither.
+type DeriveDecl =
+  { name :: String
+  , span :: Span
+  }
+
 -- | `%left`, `%right` or `%nonassoc` over a set of tokens. Priority is
 -- | positional: later declarations bind more tightly, so it is the index of
 -- | this declaration within the grammar that matters, not anything stored here.
@@ -169,6 +180,7 @@ type Grammar =
   , starts :: Array StartDecl
   , types :: Array TypeDecl
   , precedences :: Array PrecedenceDecl
+  , derives :: Array DeriveDecl
   , rules :: Array Rule
   }
 

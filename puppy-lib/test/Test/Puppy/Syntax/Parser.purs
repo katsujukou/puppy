@@ -7,6 +7,7 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), contains)
 import Effect.Aff (Aff)
+import Data.String.Common (joinWith)
 import Puppy.Syntax
   ( Associativity(..)
   , Grammar
@@ -21,6 +22,21 @@ import Puppy.Syntax.Lexer as Lexer
 import Puppy.Syntax.Parser (parse, parseGrammar)
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
+
+manyRules :: Int -> String
+manyRules n = "%token P\n%start { X } main\n%%\nmain: |"
+  <> joinWith "" (map (\i -> " t" <> show i) (Array.range 1 n))
+  <> " { R }\n"
+  <> joinWith "" (map (\i -> "t" <> show i <> ": | P { R }\n") (Array.range 1 n))
+
+manyTokens :: Int -> String
+manyTokens n = "%token"
+  <> joinWith "" (map (\i -> " T" <> show i) (Array.range 1 n))
+  <> "\n%start { X } main\n%%\nmain: | T1 { R }\n"
+
+manyAlternatives :: Int -> String
+manyAlternatives n = "%token P\n%start { X } main\n%%\nmain:\n"
+  <> joinWith "" (map (\i -> "  | P { " <> show i <> " }\n") (Array.range 1 n))
 
 sample :: String
 sample =
@@ -282,3 +298,25 @@ spec = describe "Puppy.Syntax.Parser" do
             Left err ->
               when (not (contains (Pattern "after the end") err.message)) do
                 fail $ "unexpected message: " <> err.message
+
+  -- Every repetition in this parser accumulates through an explicit loop. The
+  -- obvious spelling puts the recursive call under a bind, where it stops
+  -- being a tail call and costs a stack frame per rule.
+  describe "large inputs" do
+    it "reads thousands of rules without a frame for each" do
+      case parse (manyRules 8000) of
+        Left err -> fail ("failed to parse: " <> err.message)
+        Right g -> Array.length g.rules `shouldEqual` 8001
+
+    it "reads thousands of names in one declaration" do
+      case parse (manyTokens 8000) of
+        Left err -> fail ("failed to parse: " <> err.message)
+        Right g -> case g.tokens of
+          GeneratedTokens decls -> Array.length decls `shouldEqual` 8000
+
+    it "reads thousands of alternatives in one rule" do
+      case parse (manyAlternatives 8000) of
+        Left err -> fail ("failed to parse: " <> err.message)
+        Right g -> case Array.head g.rules of
+          Nothing -> fail "expected a rule"
+          Just r -> Array.length r.productions `shouldEqual` 8000
