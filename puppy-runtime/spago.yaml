@@ -5,7 +5,9 @@ package:
     - either
     - lists
     - maybe
+    - partial
     - prelude
+    - unsafe-coerce
   test:
     main: Test.Puppy.Runtime
     dependencies:

@@ -52,7 +52,9 @@
             "either",
             "lists",
             "maybe",
-            "prelude"
+            "partial",
+            "prelude",
+            "unsafe-coerce"
           ]
         },
         "test": {
