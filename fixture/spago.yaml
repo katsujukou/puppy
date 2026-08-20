@@ -1,0 +1,19 @@
+# Generated parsers, compiled and run for real.
+#
+# The dependencies here are exactly what a generated module needs. If code
+# generation starts reaching for something else, this package stops building,
+# which is the point of keeping it separate from the generator.
+package:
+  name: puppy-fixture
+  dependencies:
+    - arrays
+    - either
+    - maybe
+    - prelude
+    - puppy-runtime
+  test:
+    main: Test.Puppy.Fixture
+    dependencies:
+      - spec
+      - spec-node
+      - effect

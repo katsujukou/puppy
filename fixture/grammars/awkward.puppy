@@ -1,0 +1,27 @@
+%token STATE
+%token { Int } VALUE
+
+%token TAB "a	b"
+%token CTRL "xAy"
+
+%derive Eq Show
+
+-- every start symbol and binder here is a name the generator once used
+%start { Int } input
+%start { Int } state
+
+%type { Int } value
+
+%%
+
+input:
+  | row = value { row }
+
+state:
+  | err = value { err }
+
+value:
+  | entry = VALUE  { entry }
+  | STATE          { 0 }
+  | TAB            { 1 }
+  | CTRL           { 2 }

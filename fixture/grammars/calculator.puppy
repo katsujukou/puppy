@@ -1,0 +1,22 @@
+%token PLUS TIMES LPAREN RPAREN
+%token { Int } INT
+
+%derive Eq Show
+
+%start { Int } expression
+
+%type { Int } expr
+
+%left PLUS
+%left TIMES
+
+%%
+
+expression:
+  | e = expr { e }
+
+expr:
+  | i = INT                 { i }
+  | a = expr PLUS b = expr  { a + b }
+  | a = expr TIMES b = expr { a * b }
+  | LPAREN e = expr RPAREN  { e }

@@ -26,6 +26,8 @@ jobs:
               - 'puppy-lib/**'
               - 'puppy-runtime/**'
               - 'cli/**'
+              - 'fixture/**'
+              - 'scripts/**'
               - 'spago.yaml'
               - 'spago.lock'
               - 'flake.nix'
@@ -54,6 +56,20 @@ jobs:
         run: |
           spago test -p puppy-lib -m Test.Puppy --pure
           spago test -p puppy-cli -m Test.Puppy.CLI.Main --pure
+
+      # The parsers under fixture/src are the generator's own output, kept in
+      # the tree so that this compiles and runs them for real. A golden test on
+      # the generated text could only say it had not changed.
+      - name: Test generated parsers
+        run: spago test -p puppy-fixture --pure
+
+      # Regenerating has to be a no-op, or the committed parsers no longer say
+      # what the generator does. Runs before the step below, which removes the
+      # output the generator is driven from.
+      - name: Fixtures are current
+        run: |
+          node scripts/generate-fixtures.mjs
+          git diff --exit-code fixture/src
 
       - name: Build & Test runtime (in clean environment)
         run: |

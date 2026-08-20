@@ -1,0 +1,35 @@
+%token COMMA
+%token { String } A
+%token { String } B
+
+%derive Eq Show
+
+%start { Array String } items
+%start { String } single
+
+%type { Array String } list
+%type { Array String } tail
+%type { String } item
+
+%%
+
+items:
+  | xs = list { xs }
+
+single:
+  | x = item { x }
+
+list:
+  |                            { [] }
+  | x = item rest = tail       { [ x ] <> rest }
+
+tail:
+  |                            { [] }
+  | COMMA x = item rest = tail { [ x ] <> rest }
+
+item:
+  | x = wrapped { "[" <> x <> "]" }
+
+%inline wrapped:
+  | x = A { x <> "!" }
+  | x = B { x <> "?" }

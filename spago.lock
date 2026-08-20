@@ -18,6 +18,25 @@
           ]
         }
       },
+      "puppy-fixture": {
+        "path": "fixture",
+        "core": {
+          "dependencies": [
+            "arrays",
+            "either",
+            "maybe",
+            "prelude",
+            "puppy-runtime"
+          ]
+        },
+        "test": {
+          "dependencies": [
+            "effect",
+            "spec",
+            "spec-node"
+          ]
+        }
+      },
       "puppy-lib": {
         "path": "puppy-lib",
         "core": {
