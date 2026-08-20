@@ -2,8 +2,9 @@ package:
   name: puppy-lib
   dependencies:
     - arrays
-    - effect
+    - bifunctors
     - either
+    - integers
     - foldable-traversable
     - lists
     - maybe
@@ -17,5 +18,6 @@ package:
       - aff
       - spec
       - datetime
+      - effect
       - now
       - spec-node

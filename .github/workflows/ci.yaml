@@ -27,7 +27,6 @@ jobs:
               - 'puppy-runtime/**'
               - 'cli/**'
               - 'fixture/**'
-              - 'scripts/**'
               - 'spago.yaml'
               - 'spago.lock'
               - 'flake.nix'
@@ -50,7 +49,7 @@ jobs:
       - uses: nicknovitski/nix-develop@v1
 
       - name: Build whole project
-        run: spago build --strict --pure
+        run: spago build --strict --pure --pedantic-packages
 
       - name: Test lib & cli packages
         run: |
@@ -65,10 +64,10 @@ jobs:
 
       # Regenerating has to be a no-op, or the committed parsers no longer say
       # what the generator does. Runs before the step below, which removes the
-      # output the generator is driven from.
+      # output the CLI is built from.
       - name: Fixtures are current
         run: |
-          node scripts/generate-fixtures.mjs
+          spago run -p puppy-cli --pure -- -p puppy-fixture
           git diff --exit-code fixture/src
 
       - name: Build & Test runtime (in clean environment)

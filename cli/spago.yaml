@@ -1,10 +1,25 @@
 package:
   name: puppy-cli
   dependencies:
-    - console
+    - argonaut-core
+    - argparse-basic
+    - arrays
     - effect
+    - either
+    - fmt
+    - foldable-traversable
+    - foreign-object
+    - maybe
+    - console
+    - exceptions
+    - node-path
+    - node-process
     - prelude
     - puppy-lib
+    - run
+    - strings
+    - tuples
+    - typelevel-prelude
   run:
     main: Puppy.CLI.Main
   test:
@@ -12,3 +27,9 @@ package:
     dependencies:
       - spec
       - spec-node
+      - argonaut-core
+      - ordered-collections
+      - run
+      - arrays
+      - maybe
+      - tuples
