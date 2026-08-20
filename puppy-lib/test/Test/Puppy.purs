@@ -3,6 +3,7 @@ module Test.Puppy where
 import Prelude
 
 import Effect (Effect)
+import Test.Puppy.Codegen as Codegen
 import Test.Puppy.Expand as Expand
 import Test.Puppy.LR.Automaton as LRAutomaton
 import Test.Puppy.LR.Grammar as LRGrammar
@@ -18,6 +19,7 @@ main = runSpecAndExitProcess [ consoleReporter ] do
   Lexer.spec
   Parser.spec
   Expand.spec
+  Codegen.spec
   LRGrammar.spec
   LRAutomaton.spec
   LRAutomaton.mergeSpec
