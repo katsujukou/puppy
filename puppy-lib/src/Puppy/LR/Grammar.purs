@@ -10,6 +10,7 @@ module Puppy.LR.Grammar
   , Prod
   , LRGrammar
   , LRError
+  , Precedence
   , number
   , renderSym
   , renderProd
@@ -29,7 +30,8 @@ import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Puppy.Grammar (Symbol(..))
 import Puppy.Grammar as Core
-import Puppy.Syntax (Span, eofToken)
+import Data.Map (Map)
+import Puppy.Syntax (Associativity, Span, eofToken)
 
 data Sym
   = T Int
@@ -67,7 +69,17 @@ type LRGrammar =
         , production :: Int
         -- ^ The added production whose completed item means acceptance.
         }
+  , precedence :: Map Int Precedence
+  -- ^ Only the terminals a `%left`, `%right` or `%nonassoc` named.
   , eof :: Int
+  }
+
+-- | Where a terminal sits in the pecking order, and which way it leans when it
+-- | meets something of its own rank. The level is the position of the
+-- | declaration that named it: later declarations bind more tightly.
+type Precedence =
+  { level :: Int
+  , associativity :: Associativity
   }
 
 type LRError = { message :: String, span :: Span }
@@ -101,6 +113,7 @@ number core = do
       { terminals
       , nonterminals
       , productions: all
+      , precedence
       , starts: Array.mapWithIndex
           (\i a -> a.start { production = Array.length productions + i })
           augmented
@@ -115,6 +128,18 @@ number core = do
       <> [ { name: eofToken.name, display: eofToken.display } ]
 
   eof = Array.length terminals - 1
+
+  -- The order the declarations were written in is the whole of their meaning,
+  -- so the index is the level.
+  precedence = Map.fromFoldable
+    (Array.concat (Array.mapWithIndex ranked core.precedences))
+
+  ranked level decl = Array.mapMaybe
+    ( \name -> map
+        (\t -> Tuple t { level, associativity: decl.associativity })
+        (Map.lookup name terminalIndex)
+    )
+    decl.tokens
 
   terminalIndex = indexOf (map _.name terminals)
 
@@ -136,10 +161,10 @@ number core = do
   convert (Tuple i p) = do
     lhs <- require nonterminalIndex p.lhs "nonterminal" p.span
     rhs <- traverse (toSym p.span) p.rhs
-    precedence <- traverse
+    prec <- traverse
       (\t -> require terminalIndex t "token" p.span)
       p.precedence
-    pure { lhs, rhs, source: Just i, precedence, span: p.span }
+    pure { lhs, rhs, source: Just i, precedence: prec, span: p.span }
 
   toSym span = case _ of
     Terminal t -> T <$> require terminalIndex t "token" span
