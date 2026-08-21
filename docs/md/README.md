@@ -1,4 +1,4 @@
-# Intrduction
+# Introduction
 
 Puppy turns a grammar into a PureScript parser. You write the grammar and what
 each rule means; Puppy works out the parsing table and writes a module.
