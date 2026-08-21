@@ -8,6 +8,7 @@ import Halogen as H
 import Halogen.HTML as HH
 import Halogen.HTML.Properties as HP
 import Halogen.Hooks as Hooks
+import Puppy.Docs.UI.Base (asset)
 import Puppy.Docs.UI.Hooks.UseApp (Theme(..), useApp)
 import Puppy.Docs.UI.Views.MarkdownView as MarkdownView
 import Type.Proxy (Proxy(..))
@@ -44,8 +45,8 @@ make = Hooks.component \_ { html } -> Hooks.do
               [ HH.img
                   [ HP.src $
                       case ctx.theme of
-                        Dark -> "img/github-mark.svg"
-                        Light -> "img/github-mark-white.svg"
+                        Dark -> asset "img/github-mark.svg"
+                        Light -> asset "img/github-mark-white.svg"
                   , HP.class_ $ ClassName "w-8 h-8"
                   ]
               , HH.span
@@ -59,7 +60,7 @@ make = Hooks.component \_ { html } -> Hooks.do
               , HP.rel "noopener noreferrer"
               ]
               [ HH.img
-                  [ HP.src "img/npmjs-icon.svg"
+                  [ HP.src (asset "img/npmjs-icon.svg")
                   , HP.class_ $ ClassName "w-8 h-8"
                   ]
               , HH.span

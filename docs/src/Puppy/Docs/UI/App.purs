@@ -18,6 +18,7 @@ import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.Hooks (useLifecycleEffect, useState)
 import Halogen.Hooks as Hooks
+import Puppy.Docs.UI.Base (asset)
 import Puppy.Docs.UI.Hooks.UseApp (Theme(..), useApp)
 import Puppy.Docs.UI.Hooks.UseNavigate (useNavigate)
 import Puppy.Docs.UI.Manifest (lookupByPath, manifestCodec, manifestJson)
@@ -79,17 +80,17 @@ make = Hooks.component \_ _ -> Hooks.do
                       ]
                       [ HH.span
                           [ HP.class_ $ ClassName "mask-icon w-6 h-6"
-                          , HP.style (maskImage ("img/menu-icon.svg"))
+                          , HP.style (maskImage (asset "img/menu-icon.svg"))
                           ]
                           []
                       ]
                   , HH.div
-                      [ HP.class_ $ ClassName "flex items-center gap-3 font-mono font-semibold tracking-tight text-[20px] whitespace-nowrap cursor-pointer"
+                      [ HP.class_ $ ClassName "flex items-center gap-3 font-mono font-semibold tracking-tight text-[20px] whitespace-nowrap cursor-pointer hidden md:block"
                       , HE.onClick \_ -> ctx.navigateTo Home
                       ]
                       [ HH.span
                           [ HP.class_ $ ClassName "mask-icon w-6 h-6"
-                          , HP.style (maskImage ("img/book-icon.svg"))
+                          , HP.style (maskImage (asset "img/book-icon.svg"))
                           ]
                           []
                       , HH.text " Puppy Documentation"
@@ -104,7 +105,7 @@ make = Hooks.component \_ _ -> Hooks.do
                       ]
                       [ HH.span
                           [ HP.class_ $ ClassName "mask-icon text-fg-muted w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-                          , HP.style (maskImage ("img/search-icon.svg"))
+                          , HP.style (maskImage (asset "img/search-icon.svg"))
                           ]
                           []
                       , HH.input
@@ -130,7 +131,7 @@ make = Hooks.component \_ _ -> Hooks.do
                       ]
                       [ HH.div
                           [ HP.class_ $ ClassName "flex gap-3 items-center" ]
-                          [ HH.img [ HP.src ("img/github-mark.svg"), HP.alt "GitHub", HP.class_ $ ClassName "w-6 h-6 block dark:invert" ]
+                          [ HH.img [ HP.src (asset "img/github-mark.svg"), HP.alt "GitHub", HP.class_ $ ClassName "w-6 h-6 block dark:invert" ]
                           , HH.span [ HP.class_ $ ClassName "font-mono hover:underline" ] [ HH.text $ Fmt.fmt @"v{version}" { version: puppyVersion } ]
                           ]
                       ]
@@ -160,8 +161,8 @@ make = Hooks.component \_ _ -> Hooks.do
                         [ HH.span
                             [ HP.class_ $ ClassName "flex items-center gap-1" ]
                             [ HH.img
-                                [ HP.src ("img/law-ico.svg")
-                                , HP.class_ $ ClassName "w-3 h-3"
+                                [ HP.src (asset "img/law-ico.svg")
+                                , HP.class_ $ ClassName "w-4 h-4"
                                 ]
                             , HH.text "MIT licensed"
                             ]
@@ -181,7 +182,7 @@ make = Hooks.component \_ _ -> Hooks.do
   themeToggle ctx =
     HH.div [ HP.class_ $ ClassName "flex items-center gap-2" ]
       [ HH.span [ HP.class_ $ ClassName "hidden sm:flex" ]
-          [ themeIcon "Use light theme" ("img/sun-icon.svg") (not ctx.dark) (ctx.setTheme Light) ]
+          [ themeIcon "Use light theme" (asset "img/sun-icon.svg") (not ctx.dark) (ctx.setTheme Light) ]
       , HH.button
           [ HP.class_ $ ClassName "relative w-10 h-5 rounded-full bg-border transition-colors cursor-pointer"
           , HP.type_ HP.ButtonButton
@@ -193,7 +194,7 @@ make = Hooks.component \_ _ -> Hooks.do
               []
           ]
       , HH.span [ HP.class_ $ ClassName "hidden sm:flex" ]
-          [ themeIcon "Use dark theme" ("img/moon-icon.svg") ctx.dark (ctx.setTheme Dark) ]
+          [ themeIcon "Use dark theme" (asset "img/moon-icon.svg") ctx.dark (ctx.setTheme Dark) ]
       ]
 
   themeIcon label src active action =
