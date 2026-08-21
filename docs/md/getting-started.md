@@ -83,6 +83,22 @@ dependencies:
 That is what the *generated* module needs. Everything else your package uses is
 on top of it — the lexer below wants `integers` and `strings` as well.
 
+> **Note** `puppy-runtime` is not in the PureScript registry yet. Until it is,
+> name it as an extra package pointing at the subdirectory it lives in:
+>
+> ```yaml
+> workspace:
+>   extraPackages:
+>     puppy-runtime:
+>       git: https://github.com/katsujukou/puppy.git
+>       ref: v0.1.0
+>       subdir: puppy-runtime
+> ```
+>
+> Pin `ref` to a tag rather than a branch, so that a build stays what it was.
+> When `puppy-runtime` reaches the registry this block comes out and nothing
+> else changes.
+
 ## A lexer
 
 Puppy does not write one. The parser takes an `Array Token`, and turning text

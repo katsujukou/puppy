@@ -23,9 +23,16 @@ const LANDING = { file: "README.md" };
 
 const THEMES = { light: "github-light", dark: "github-dark" };
 
+// Fence language -> the shiki grammar to highlight it with. A fence whose
+// language is missing from here (`plain`, or none at all) is left as text.
 const LANG_ALIASES = {
   purescript: "purescript",
   purs: "purescript",
+  sh: "bash",
+  bash: "bash",
+  shell: "bash",
+  yaml: "yaml",
+  yml: "yaml",
 };
 
 const GH_BLOB = "https://github.com/katsujukou/puppy/blob/main/docs";
@@ -64,7 +71,7 @@ function decorateNotes(html) {
 
 const highlighter = await createHighlighter({
   themes: [THEMES.light, THEMES.dark],
-  langs: ["purescript"],
+  langs: ["purescript", "bash", "yaml"],
 });
 
 const escapeHtml = (s) =>

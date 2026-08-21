@@ -1,82 +1,108 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
   <title id="title">Puppy — PureScript LR(1) parser generator emblem</title>
-  <desc id="desc">A geometric puppy face with PureScript-inspired chevrons and a parser tree forming its muzzle.</desc>
+  <desc id="desc">A seated geometric puppy with PureScript-inspired chevrons, a parser tree, and a single golden lookahead token.</desc>
 
   <defs>
-    <linearGradient id="badge" x1="96" y1="64" x2="416" y2="448" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#242044"/>
+    <linearGradient id="badge" x1="92" y1="68" x2="420" y2="450" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#29254C"/>
       <stop offset="1" stop-color="#111827"/>
     </linearGradient>
-    <linearGradient id="violet" x1="146" y1="126" x2="370" y2="368" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#9678F0"/>
+    <linearGradient id="coat" x1="192" y1="96" x2="324" y2="446" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFDF8"/>
+      <stop offset="1" stop-color="#EAE4DA"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="120" y1="116" x2="390" y2="388" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A58AF5"/>
       <stop offset="1" stop-color="#6242C7"/>
     </linearGradient>
-    <linearGradient id="ear" x1="92" y1="138" x2="177" y2="281" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#B69BFF"/>
-      <stop offset="1" stop-color="#7452D6"/>
+    <linearGradient id="ear" x1="92" y1="122" x2="172" y2="270" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#A98DF7"/>
+      <stop offset="1" stop-color="#6C49CD"/>
     </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%" color-interpolation-filters="sRGB">
-      <feDropShadow dx="0" dy="12" stdDeviation="13" flood-color="#090C16" flood-opacity=".38"/>
+    <filter id="shadow" x="-24%" y="-20%" width="148%" height="155%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="11" flood-color="#080B14" flood-opacity=".36"/>
     </filter>
     <clipPath id="badgeClip">
       <circle cx="256" cy="256" r="220"/>
     </clipPath>
   </defs>
 
-  <!-- Deep circular field: calm enough for documentation, strong enough for a CLI icon. -->
+  <!-- Circular field and quiet automaton orbit. -->
   <circle cx="256" cy="256" r="232" fill="url(#badge)"/>
   <circle cx="256" cy="256" r="220" fill="none" stroke="#FFFFFF" stroke-opacity=".10" stroke-width="2"/>
-
-  <!-- Subtle automaton orbit and state markers. -->
   <g clip-path="url(#badgeClip)" fill="none" stroke="#B69BFF" stroke-linecap="round">
-    <path d="M100 326A178 178 0 0 1 108 169" stroke-opacity=".18" stroke-width="3" stroke-dasharray="2 13"/>
-    <path d="M404 169A178 178 0 0 1 412 326" stroke-opacity=".18" stroke-width="3" stroke-dasharray="2 13"/>
+    <path d="M80 294A179 179 0 0 1 104 170" stroke-opacity=".20" stroke-width="3" stroke-dasharray="2 13"/>
+    <path d="M408 170A179 179 0 0 1 432 294" stroke-opacity=".20" stroke-width="3" stroke-dasharray="2 13"/>
   </g>
 
   <g filter="url(#shadow)">
-    <!-- Floppy ears, drawn as soft geometric brackets. -->
-    <path d="M165 150C133 122 93 126 76 154C64 174 70 202 92 224L143 276L177 215Z" fill="url(#ear)"/>
-    <path d="M347 150C379 122 419 126 436 154C448 174 442 202 420 224L369 276L335 215Z" fill="url(#ear)"/>
-    <path d="M151 163C128 145 104 148 93 165C84 179 90 195 103 208L145 250L163 205Z" fill="#2D2853" fill-opacity=".72"/>
-    <path d="M361 163C384 145 408 148 419 165C428 179 422 195 409 208L367 250L349 205Z" fill="#2D2853" fill-opacity=".72"/>
+    <!-- Grounding shadow. -->
+    <ellipse cx="258" cy="449" rx="132" ry="15" fill="#070A12" fill-opacity=".34"/>
 
-    <!-- Head: a rounded shield silhouette, friendly but precise. -->
-    <path d="M256 107C191 107 145 153 145 222V287C145 355 191 405 256 405C321 405 367 355 367 287V222C367 153 321 107 256 107Z" fill="#F8F5EE"/>
-    <path d="M256 107C191 107 145 153 145 222V287C145 355 191 405 256 405C321 405 367 355 367 287V222C367 153 321 107 256 107Z" fill="none" stroke="#FFFFFF" stroke-opacity=".58" stroke-width="3"/>
+    <!-- Tail, tucked behind the seated body. -->
+    <path d="M156 365C112 373 93 350 105 324C111 311 122 304 136 302" fill="none" stroke="#E7E0D5" stroke-width="31" stroke-linecap="round"/>
+    <path d="M151 361C122 365 108 350 112 337" fill="none" stroke="#FFFFFF" stroke-opacity=".30" stroke-width="5" stroke-linecap="round"/>
 
-    <!-- PureScript-inspired token flow: opposing chevrons around a shared production. -->
-    <g fill="none" stroke="url(#violet)" stroke-linecap="round" stroke-linejoin="round" stroke-width="14">
-      <path d="M225 162L203 184L225 206"/>
-      <path d="M287 162L309 184L287 206"/>
-      <path d="M236 184H276"/>
+    <!-- Seated body and rounded haunches. -->
+    <path d="M171 257C137 288 120 337 121 391C122 427 151 446 195 446H322C364 446 389 428 389 394C389 339 373 291 341 259C311 240 202 240 171 257Z" fill="url(#coat)"/>
+    <path d="M171 257C137 288 120 337 121 391C122 427 151 446 195 446H322C364 446 389 428 389 394C389 339 373 291 341 259" fill="none" stroke="#FFFFFF" stroke-opacity=".38" stroke-width="3"/>
+
+    <!-- Collar sits behind the head, wrapping naturally around the shoulders. -->
+    <path d="M159 260C180 281 211 293 256 293C301 293 332 281 353 260L365 280C337 309 301 322 256 322C211 322 175 309 147 280Z" fill="url(#violet)"/>
+    <path d="M157 274C183 300 215 310 256 310C297 310 329 300 355 274" fill="none" stroke="#C8B8FF" stroke-opacity=".30" stroke-width="3"/>
+
+    <!-- Floppy ears use the reference's long, downward silhouette. -->
+    <path d="M170 121C138 91 99 106 78 141C58 175 73 203 91 220C94 226 92 240 94 251C97 274 111 286 133 284C158 282 169 266 169 243Z" fill="url(#ear)"/>
+    <path d="M342 121C374 91 413 106 434 141C454 175 439 203 421 220C418 226 420 240 418 251C415 274 401 286 379 284C354 282 343 266 343 243Z" fill="url(#ear)"/>
+    <path d="M153 128C130 109 106 122 93 146C82 166 88 184 102 199C109 207 110 220 109 236C108 256 115 267 133 266C147 265 153 255 153 239Z" fill="#342C60" fill-opacity=".66"/>
+    <path d="M359 128C382 109 406 122 419 146C430 166 424 184 410 199C403 207 402 220 403 236C404 256 397 267 379 266C365 265 359 255 359 239Z" fill="#342C60" fill-opacity=".66"/>
+
+    <!-- Head: a rounded, slightly tapered shield keeps the mark technical and friendly. -->
+    <path d="M256 80C192 80 154 119 154 174V222C154 269 195 296 256 296C317 296 358 269 358 222V174C358 119 320 80 256 80Z" fill="url(#coat)"/>
+    <path d="M256 80C192 80 154 119 154 174V222C154 269 195 296 256 296C317 296 358 269 358 222V174C358 119 320 80 256 80Z" fill="none" stroke="#FFFFFF" stroke-opacity=".52" stroke-width="3"/>
+
+    <!-- PureScript-inspired opposing chevrons around one production. -->
+    <g fill="none" stroke="url(#violet)" stroke-linecap="round" stroke-linejoin="round" stroke-width="11">
+      <path d="M227 124L210 141L227 158"/>
+      <path d="M285 124L302 141L285 158"/>
+      <path d="M238 141H274"/>
     </g>
-    <circle cx="326" cy="184" r="8" fill="#F3C969"/>
 
     <!-- Eyes. -->
-    <ellipse cx="210" cy="239" rx="11" ry="14" fill="#1A2031"/>
-    <ellipse cx="302" cy="239" rx="11" ry="14" fill="#1A2031"/>
-    <circle cx="207" cy="235" r="3" fill="#FFFFFF" fill-opacity=".86"/>
-    <circle cx="299" cy="235" r="3" fill="#FFFFFF" fill-opacity=".86"/>
+    <ellipse cx="211" cy="194" rx="11" ry="14" fill="#192030"/>
+    <ellipse cx="301" cy="194" rx="11" ry="14" fill="#192030"/>
+    <circle cx="208" cy="190" r="3" fill="#FFFFFF" fill-opacity=".88"/>
+    <circle cx="298" cy="190" r="3" fill="#FFFFFF" fill-opacity=".88"/>
 
-    <!-- Muzzle. The nose is the parser root; its mouth resolves into an AST. -->
-    <path d="M190 292C190 263 218 247 256 247C294 247 322 263 322 292C322 330 293 355 256 355C219 355 190 330 190 292Z" fill="#FFFFFF"/>
-    <path d="M234 273C234 263 244 258 256 258C268 258 278 263 278 273C278 284 267 292 256 292C245 292 234 284 234 273Z" fill="#181D2B"/>
+    <!-- Muzzle. -->
+    <path d="M200 237C200 215 223 204 256 204C289 204 312 215 312 237C312 265 287 278 256 278C225 278 200 265 200 237Z" fill="#FFFFFF" fill-opacity=".94"/>
+    <path d="M235 226C235 217 244 212 256 212C268 212 277 217 277 226C277 236 267 243 256 243C245 243 235 236 235 226Z" fill="#171D2B"/>
+    <path d="M256 243V254" fill="none" stroke="#7452D6" stroke-width="6" stroke-linecap="round"/>
+    <path d="M256 254L242 264M256 254L270 264" fill="none" stroke="#7452D6" stroke-width="5" stroke-linecap="round"/>
 
-    <g fill="none" stroke="#7452D6" stroke-linecap="round" stroke-linejoin="round" stroke-width="7">
-      <path d="M256 292V307"/>
-      <path d="M256 307L225 330"/>
-      <path d="M256 307L287 330"/>
+    <!-- Golden tag: the single LR(1) lookahead token. -->
+    <circle cx="256" cy="315" r="20" fill="#F3C969"/>
+    <circle cx="256" cy="315" r="13" fill="#201E38"/>
+    <circle cx="256" cy="315" r="5" fill="#F3C969"/>
+
+    <!-- Chest blaze and parser tree. -->
+    <path d="M211 327C224 337 239 342 256 342C273 342 288 337 301 327L291 405C288 426 275 438 256 438C237 438 224 426 221 405Z" fill="#FFFFFF" fill-opacity=".46"/>
+    <!-- Front legs and paws complete the full-body seated pose. -->
+    <path d="M198 335C194 368 194 400 196 426C197 439 205 446 220 446H252V405C250 372 232 346 198 335Z" fill="#F0EAE1" stroke="#D7CFC4" stroke-width="2"/>
+    <path d="M314 335C318 368 318 400 316 426C315 439 307 446 292 446H260V405C262 372 280 346 314 335Z" fill="#E4DDD3" stroke="#CEC5B9" stroke-width="2"/>
+    <path d="M256 347V429" stroke="#C9C0B5" stroke-width="4" stroke-linecap="round"/>
+    <path d="M188 446C188 431 201 421 220 421H250V446Z" fill="#F9F6F0"/>
+    <path d="M262 421H292C311 421 324 431 324 446H262Z" fill="#F0EAE1"/>
+    <path d="M210 434H235M277 434H302" stroke="#D9D1C6" stroke-width="3" stroke-linecap="round"/>
+
+    <!-- The grammar tree stays crisp above the coat and leg shapes. -->
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M256 350V368M256 368L235 386M256 368L277 386" stroke="#7452D6" stroke-width="6"/>
+      <path d="M235 386L224 399M277 386L288 399" stroke="#42B5C7" stroke-width="5"/>
     </g>
-    <circle cx="225" cy="330" r="9" fill="#7452D6"/>
-    <circle cx="287" cy="330" r="9" fill="#42B5C7"/>
-    <circle cx="256" cy="307" r="6" fill="#181D2B"/>
-  </g>
-
-  <!-- Three compact grammar tokens anchor the mark without adding text. -->
-  <g transform="translate(0 2)">
-    <rect x="184" y="419" width="36" height="7" rx="3.5" fill="#9678F0"/>
-    <rect x="238" y="419" width="36" height="7" rx="3.5" fill="#42B5C7"/>
-    <rect x="292" y="419" width="36" height="7" rx="3.5" fill="#F3C969"/>
+    <circle cx="256" cy="350" r="6" fill="#7452D6"/>
+    <circle cx="235" cy="386" r="6" fill="#7452D6"/>
+    <circle cx="277" cy="386" r="6" fill="#42B5C7"/>
   </g>
 </svg>

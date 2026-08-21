@@ -61,6 +61,14 @@ reports `found: Nothing`, because there is no token there to name.
 ## Parse errors
 
 ```purescript
+import Puppy.Runtime (ParseError)
+```
+
+`Puppy.Runtime` is the whole of the runtime package's surface, and this is the
+one name in it you are likely to want: the generated module exports its entry
+points and its `Token`, but the error type belongs to the runtime.
+
+```purescript
 type ParseError tok =
   { position :: Int
   , found :: Maybe tok
@@ -94,6 +102,10 @@ dependencies:
 the box its semantic values travel in. It is a small package that does not
 depend on the generator: building and shipping a parser does not need Puppy
 installed.
+
+> **Note** `puppy-runtime` is not in the PureScript registry yet. Until it is,
+> name it as an extra package pointing at the subdirectory it lives in — see
+> [getting started](getting-started.md#generating).
 
 Anything your semantic actions use is on top of that, imported in the grammar's
 [`%{ ... %}` header](grammar.md#the-header).

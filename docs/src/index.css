@@ -22,28 +22,26 @@
   --color-accent-soft: #e8f0fe; /* active item background */
   --color-fg: #1f2328;
   --color-fg-strong: #1d222d;
-  --color-fg-sstrong: #7452d6;
+  --color-fg-sstrong: #9e2525;
   --color-fg-muted: #59636e;
-  --color-brand: #7452d6;       /* logo / h1 / sidebar headline */
+  --color-brand: #9e2525;       /* logo / h1 / sidebar headline */
   --color-purs: #14161A;
-  --color-wasm: #654ff0;
   --color-github: #24292e;
 }
 
 .dark {
-  --color-base: #1e2a3d;
-  --color-surface: #253347;
-  --color-header: #253347;
+  --color-base: #2f0909;
+  --color-surface: #40120c;
+  --color-header: #40120c;
   --color-border: #42474b;
-  --color-accent: #58a6ff;
-  --color-accent-soft: #1f2d3d;
-  --color-fg: #c9d1d9;
-  --color-fg-sstrong: #b69bff;
+  --color-accent: #ffb558;
+  --color-accent-soft: #3e2b31;
+  --color-fg: #d9c9c9;
+  --color-fg-sstrong: #ff9b9b;
   --color-fg-strong: #f0f6fc;
   --color-fg-muted: #8b949e;
-  --color-brand: #b69bff;
+  --color-brand: #ff9b9b;
   --color-purs: #EBE9E5;
-  --color-wasm: #7f6cfb;
   --color-github: #f0f6fc;
 }
 
@@ -186,7 +184,11 @@
   mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z'/%3E%3C/svg%3E");
 }
 
-.md-doc code {
+/* Inline code: a chip inside prose. Scoped away from `pre`, whose `code` child
+   is the block itself and must take the panel's background, not a chip's. A
+   plain `.md-doc code` rule would win there in dark mode -- `.dark .md-doc code`
+   outranks `.md-doc pre code` -- and paint one chip per line of the block. */
+.md-doc :not(pre) > code {
   font-family: var(--font-mono);
   font-size: 0.85em;
   background: #eaeef2;
@@ -194,7 +196,7 @@
   padding: 0.15em 0.4em;
   border-radius: 0.3rem;
 }
-.dark .md-doc code {
+.dark .md-doc :not(pre) > code {
   background: #2a313c;
   color: #ff9bce;
 }
@@ -216,18 +218,16 @@
   font-size: inherit;
   font-family: var(--font-mono);
 }
-/* shiki sets its own inline background on the <pre>; override it to keep the
-   panel consistent with plain code blocks while preserving token colors. */
+/* shiki sets its own inline background on the <pre>; override it so that a
+   highlighted block and an unhighlighted one are the same panel. */
 .md-doc pre.shiki {
   background-color: #f6f8fa !important;
 }
-/* Dark: plain blocks use the surface color; shiki blocks switch their tokens
-   to the dark theme baked in as --shiki-dark CSS vars (dual-theme output). */
-.dark .md-doc pre {
-  background: #161b22;
-}
+/* Dark: same panel either way; shiki blocks switch their tokens to the dark
+   theme baked in as --shiki-dark CSS vars (dual-theme output). */
+.dark .md-doc pre,
 .dark .md-doc pre.shiki {
-  background-color: #2a313c !important;
+  background-color: #161b22 !important;
 }
 .dark .md-doc pre.shiki span {
   color: var(--shiki-dark) !important;
