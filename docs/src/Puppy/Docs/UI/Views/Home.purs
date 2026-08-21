@@ -26,13 +26,14 @@ make = Hooks.component \_ { html } -> Hooks.do
   where
   render ctx = do
     HH.div []
-      [ HH.div [ HP.class_ $ ClassName "my-6"
-        ]
-        [ HH.span [ HP.class_ $ ClassName "text-5xl font-mono font-bold text-brand "]
-          [ HH.text "🐶 Puppy"]
-        ]
+      [ HH.div
+          [ HP.class_ $ ClassName "my-6"
+          ]
+          [ HH.span [ HP.class_ $ ClassName "text-5xl font-mono font-bold text-brand " ]
+              [ HH.text "🐶 Puppy" ]
+          ]
       , HH.p [ HP.class_ $ ClassName "mt-6 mb-8" ]
-        [ HH.text "Puppy is a LR(1) parser generator for PureScript, inspired by Menhir and Happy." ]
+          [ HH.text "Puppy is a LR(1) parser generator for PureScript, inspired by Menhir and Happy." ]
       , HH.div [ HP.class_ $ ClassName "flex gap-5 items-center mb-10" ]
           [ HH.a
               [ HP.class_ $ ClassName "flex gap-3 p-3 rounded-sm items-center bg-github text-[#ffffff]"
