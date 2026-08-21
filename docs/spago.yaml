@@ -1,0 +1,23 @@
+package:
+  name: puppy-docs
+  dependencies:
+    - aff
+    - arrays
+    - codec-argonaut
+    - effect
+    - fmt
+    - halogen
+    - halogen-helix
+    - halogen-hooks
+    - js-promise-aff
+    - prelude
+    - routing
+    - routing-duplex
+    - strings
+    - tuples
+    - web-uievents
+  test:
+    main: Test.Puppy.Docs.Main
+    dependencies:
+      - spec
+      - spec-node

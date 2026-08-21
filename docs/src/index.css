@@ -1,0 +1,289 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* Class-based dark mode: `dark:` utilities apply under `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Work Sans (rounded humanist sans, as on ocsigen.org) for prose,
+     Fira Code for code / brand / chrome. */
+  --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Light palette (default). Dark overrides live in the `.dark` block below;
+     because Tailwind v4 utilities reference these vars, overriding them
+     re-themes every color utility at runtime. */
+  --color-base: #fcfcfc;        /* content background */
+  --color-surface: #f6f8fa;     /* sidebar / header */
+  --color-header: #f6f8fa;      /* top bar */
+  --color-border: #d8dee4;
+  --color-accent: #2563eb;
+  --color-accent-soft: #e8f0fe; /* active item background */
+  --color-fg: #1f2328;
+  --color-fg-strong: #1d222d;
+  --color-fg-sstrong: #7452d6;
+  --color-fg-muted: #59636e;
+  --color-brand: #7452d6;       /* logo / h1 / sidebar headline */
+  --color-purs: #14161A;
+  --color-wasm: #654ff0;
+  --color-github: #24292e;
+}
+
+.dark {
+  --color-base: #1e2a3d;
+  --color-surface: #253347;
+  --color-header: #253347;
+  --color-border: #42474b;
+  --color-accent: #58a6ff;
+  --color-accent-soft: #1f2d3d;
+  --color-fg: #c9d1d9;
+  --color-fg-sstrong: #b69bff;
+  --color-fg-strong: #f0f6fc;
+  --color-fg-muted: #8b949e;
+  --color-brand: #b69bff;
+  --color-purs: #EBE9E5;
+  --color-wasm: #7f6cfb;
+  --color-github: #f0f6fc;
+}
+
+@layer base {
+  html, body { height: 100%; }
+  body {
+    background-color: var(--color-base);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Soft scrollbars. */
+  * { scrollbar-width: thin; scrollbar-color: #c4ccd4 transparent; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background: #c4ccd4; border-radius: 9999px; border: 2px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-thumb:hover { background: #aab4bd; background-clip: content-box; }
+  .dark * { scrollbar-color: #30363d transparent; }
+  .dark *::-webkit-scrollbar-thumb { background: #30363d; background-clip: content-box; }
+  .dark *::-webkit-scrollbar-thumb:hover { background: #424b56; background-clip: content-box; }
+}
+
+/* Equivalent to VSCode's "editor.fontLigatures": true; enables ligatures. */
+@utility font-ligatures {
+  font-variant-ligatures: contextual;
+  font-feature-settings: "calt" 1, "liga" 1;
+}
+
+/* Theme-toggle icons. The SVG (set as mask-image inline) is used as a mask so a
+   single asset can be tinted: orange when active, muted (theme-adaptive)
+   otherwise — no per-theme assets or invert hacks needed. */
+.theme-ico {
+  display: inline-block;
+  width: 1.25rem;
+  height: 1.25rem;
+  background-color: #ff8000;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+  transition: background-color 0.15s ease;
+}
+.theme-ico:not(.is-active):hover { background-color: #ffb56b; }
+.theme-ico.inactive { background-color: #848484; }
+
+/* Generic single-color icon via SVG mask (mask-image set inline). Colour is
+   driven by `currentColor`, so a text-* utility tints it (theme-adaptive). */
+.mask-icon {
+  display: inline-block;
+  background-color: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+}
+
+/* ---------------------------------------------------------------------------
+   Rendered Markdown (HTML emitted by marked). Tailwind's preflight resets
+   headings/lists/etc., so re-apply a complete, readable prose style here.
+   --------------------------------------------------------------------------- */
+.md-doc {
+  color: var(--color-fg);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.md-doc > :first-child { margin-top: 0; }
+
+/* Leave breathing room above a heading scrolled to via an #anchor link. */
+.md-doc :is(h1, h2, h3, h4) { scroll-margin-top: 1.5rem; }
+
+.md-doc h1 {
+  font-size: 2rem;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--color-brand);
+  margin: 0 0 1.25rem;
+}
+.md-doc h2 {
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-fg-sstrong);
+  margin: 2.25rem 0 0.85rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.md-doc h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-fg-strong);
+  margin: 1.75rem 0 0.6rem;
+}
+.md-doc h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-fg-strong);
+  margin: 1.4rem 0 0.5rem;
+}
+
+.md-doc p { margin: 0.85rem 0; }
+
+.md-doc a {
+  color: var(--color-accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-accent) 35%, transparent);
+  transition: border-color 0.15s ease;
+}
+.md-doc a:hover { border-bottom-color: var(--color-accent); }
+
+.md-doc strong { color: var(--color-fg-strong); font-weight: 600; }
+.md-doc em { font-style: italic; }
+
+.md-doc ul, .md-doc ol { margin: 0.85rem 0; padding-left: 1.5rem; }
+.md-doc ul { list-style: disc; }
+.md-doc ol { list-style: decimal; }
+.md-doc li { margin: 0.3rem 0; }
+.md-doc li::marker { color: var(--color-fg-muted); }
+.md-doc li > ul, .md-doc li > ol { margin: 0.3rem 0; }
+
+.md-doc blockquote {
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-accent-soft);
+  padding: 0.5rem 1rem;
+  color: var(--color-fg-muted);
+  margin: 1rem 0;
+  border-radius: 0 0.375rem 0.375rem 0;
+}
+.md-doc blockquote p { margin: 0.3rem 0; }
+
+/* `> **Note**` callouts: the bold "Note" is replaced (in render-docs.mjs) by this
+   info icon. Drawn as a mask tinted with the accent color, so it adapts to light
+   and dark automatically (the "i" counter shows the blockquote background). */
+.md-doc blockquote.note .note-icon {
+  display: inline-block;
+  width: 1.15em;
+  height: 1.15em;
+  vertical-align: -0.22em;
+  margin-right: 0.35em;
+  background-color: var(--color-accent);
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill-rule='evenodd' d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z'/%3E%3C/svg%3E");
+}
+
+.md-doc code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: #eaeef2;
+  color: #b4316b;
+  padding: 0.15em 0.4em;
+  border-radius: 0.3rem;
+}
+.dark .md-doc code {
+  background: #2a313c;
+  color: #ff9bce;
+}
+
+.md-doc pre {
+  background: #f6f8fa;
+  border: 1px solid var(--color-border);
+  padding: 1rem 1.1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin: 1.1rem 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.md-doc pre code {
+  background: none;
+  color: var(--color-fg);
+  padding: 0;
+  font-size: inherit;
+  font-family: var(--font-mono);
+}
+/* shiki sets its own inline background on the <pre>; override it to keep the
+   panel consistent with plain code blocks while preserving token colors. */
+.md-doc pre.shiki {
+  background-color: #f6f8fa !important;
+}
+/* Dark: plain blocks use the surface color; shiki blocks switch their tokens
+   to the dark theme baked in as --shiki-dark CSS vars (dual-theme output). */
+.dark .md-doc pre {
+  background: #161b22;
+}
+.dark .md-doc pre.shiki {
+  background-color: #2a313c !important;
+}
+.dark .md-doc pre.shiki span {
+  color: var(--shiki-dark) !important;
+}
+
+.md-doc hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: 2rem 0;
+}
+
+.md-doc table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.1rem 0;
+  font-size: 0.9rem;
+}
+.md-doc th, .md-doc td {
+  border: 1px solid var(--color-border);
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+}
+.md-doc th {
+  background: var(--color-surface);
+  color: var(--color-fg-strong);
+  font-weight: 600;
+}
+.md-doc tr:nth-child(even) td { background: #fafbfc; }
+.dark .md-doc tr:nth-child(even) td { background: #131820; }
+
+.md-doc img { max-width: 100%; border-radius: 0.5rem; }
+.md-doc img.zoomable { cursor: zoom-in; transition: opacity 0.15s ease; }
+.md-doc img.zoomable:hover { opacity: 0.85; }
+
+/* Click-to-zoom lightbox (created imperatively in MarkdownView.js). */
+.img-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: rgba(0, 0, 0, 0.8);
+  cursor: zoom-out;
+  animation: lightbox-fade 0.12s ease;
+}
+.img-lightbox img {
+  max-width: 95vw;
+  max-height: 95vh;
+  object-fit: contain;
+  border-radius: 0.5rem;
+  background: #fff;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+@keyframes lightbox-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
