@@ -1,0 +1,84 @@
+name: Pages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - ".github/workflows/pages.yaml"
+  workflow_dispatch:
+
+# GitHub Pages serves one deployment at a time. Queue rather than cancel, so a
+# deploy that is already uploading is never cut off half way.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+env:
+  # Where the site is served from. A project page lives under the repository
+  # name; a user page or a custom domain would be "/".
+  BASE_PATH: /puppy/
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
+      - uses: cachix/cachix-action@v17
+        with:
+          name: katsujukou-github
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - uses: nicknovitski/nix-develop@v1
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Check formatting
+        run: purs-tidy check src
+
+      - name: Build the app
+        # From the workspace root: the PureScript output the site imports its
+        # FFI from lives in ../output.
+        run: spago build -p puppy-docs --pure
+        working-directory: .
+
+      # Turns docs/md/*.md into the HTML and the search index that the app
+      # imports at bundle time, so this has to come before vite.
+      - name: Render the documentation
+        run: node scripts/render-docs.mjs
+
+      - name: Bundle
+        run: npx vite build --base "$BASE_PATH"
+
+      # The app routes with pushState, so a deep link asks Pages for a path
+      # that has no file. Pages serves 404.html for those; making it the app
+      # lets the router take over.
+      - name: Add the deep-link fallback
+        run: cp dist/index.html dist/404.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
