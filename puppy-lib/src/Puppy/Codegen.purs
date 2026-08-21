@@ -174,7 +174,7 @@ semanticAction input indent index prod e = case prod.source >>= sourceAction of
     -- The productions added for the start symbols are never reduced by; the
     -- driver accepts instead.
     Emit.write
-      ( "\\_ -> Value.internalError\n"
+      ( "\\_ -> Runtime.internalError\n"
           <> line indent (quoted "the start production has no semantic action")
       )
       e
@@ -236,7 +236,7 @@ scoped input indent path prod annotation boxed action@(Core.Action a) e =
                 (Array.index prod.rhs index >>= typeOfSymbol input)
             # Emit.write
                 ( line at
-                    ( b.name <> " = Value.unbox (Value.slot " <> show index <> " "
+                    ( b.name <> " = Runtime.unbox (Runtime.slot " <> show index <> " "
                         <> values
                         <> ")"
                     )
@@ -249,7 +249,7 @@ scoped input indent path prod annotation boxed action@(Core.Action a) e =
           spaced
             # Emit.write
                 ( line at
-                    ( b.name <> " = Value.unbox (" <> path <> "_" <> show i <> " "
+                    ( b.name <> " = Runtime.unbox (" <> path <> "_" <> show i <> " "
                         <> values
                         <> ")"
                     )
@@ -268,7 +268,7 @@ scoped input indent path prod annotation boxed action@(Core.Action a) e =
 
       opened =
         if boxed then
-          Emit.write (line at "Value.box") acc
+          Emit.write (line at "Runtime.box") acc
             # Emit.write (spaces inner <> "(")
         else Emit.write (spaces inner <> "(") acc
     in
@@ -317,7 +317,7 @@ inlineHelperTable input e = Array.foldl one e (inlineHelpers input)
   where
   one acc helper =
     Emit.write
-      ( "\n" <> helper.name <> " :: Array Value.Value -> Value.Value\n"
+      ( "\n" <> helper.name <> " :: Array Runtime.Value -> Runtime.Value\n"
           <> helper.name
           <> " "
           <> parameterFor helper.action
@@ -401,13 +401,13 @@ terminalFunctions :: Input -> Emitter -> Emitter
 terminalFunctions input e =
   Emit.write "\nterminalIndex :: Maybe.Maybe Token -> Int\nterminalIndex = case _ of\n" e
     # flip (Array.foldl indexArm) numbered
-    # Emit.write "\nterminalValue :: Maybe.Maybe Token -> Value.Value\nterminalValue = case _ of\n"
+    # Emit.write "\nterminalValue :: Maybe.Maybe Token -> Runtime.Value\nterminalValue = case _ of\n"
     # flip (Array.foldl valueArm) numbered
     # Emit.write "\nterminalNames :: Array String\n"
     # Emit.write (arrayBinding "terminalNames" (map (quoted <<< _.display) tokens))
     # Emit.write "\nterminalName :: Int -> String\nterminalName puppyIndex = case Array.index terminalNames puppyIndex of\n"
     # Emit.write (line 2 "Maybe.Just puppyFound -> puppyFound")
-    # Emit.write (line 2 "Maybe.Nothing -> Value.internalError")
+    # Emit.write (line 2 "Maybe.Nothing -> Runtime.internalError")
     # Emit.write (line 4 ("(" <> quoted "no name for terminal " <> " <> show puppyIndex)"))
   where
   tokens = allTokens input
@@ -422,7 +422,7 @@ terminalFunctions input e =
 
   valueArm acc (Tuple i decl) = Emit.write
     ( line 2
-        ( pattern i decl "puppyPayload" <> " -> Value.box "
+        ( pattern i decl "puppyPayload" <> " -> Runtime.box "
             <> (if isJust decl.payload then "puppyPayload" else "unit")
         )
     )
@@ -461,7 +461,7 @@ productionTable input = Emit.write
       <> arrayBinding "productionTable" (map entry input.grammar.productions)
       <> "\nproductionAt :: Int -> Runtime.ProductionInfo\nproductionAt puppyIndex = case Array.index productionTable puppyIndex of\n"
       <> line 2 "Maybe.Just puppyFound -> puppyFound"
-      <> line 2 "Maybe.Nothing -> Value.internalError"
+      <> line 2 "Maybe.Nothing -> Runtime.internalError"
       <> line 4 ("(" <> quoted "no production " <> " <> show puppyIndex)")
   )
   where
@@ -489,14 +489,14 @@ asCore input p =
 semanticActionTable :: Input -> Emitter -> Emitter
 semanticActionTable input e =
   Emit.write
-    "\nsemanticActionTable :: Array (Array Value.Value -> Value.Value)\nsemanticActionTable =\n"
+    "\nsemanticActionTable :: Array (Array Runtime.Value -> Runtime.Value)\nsemanticActionTable =\n"
     e
     # entries
     # Emit.write (line 2 "]")
     # Emit.write
-        "\nsemanticActionAt :: Int -> Array Value.Value -> Value.Value\nsemanticActionAt puppyIndex = case Array.index semanticActionTable puppyIndex of\n"
+        "\nsemanticActionAt :: Int -> Array Runtime.Value -> Runtime.Value\nsemanticActionAt puppyIndex = case Array.index semanticActionTable puppyIndex of\n"
     # Emit.write (line 2 "Maybe.Just puppyFound -> puppyFound")
-    # Emit.write (line 2 "Maybe.Nothing -> Value.internalError")
+    # Emit.write (line 2 "Maybe.Nothing -> Runtime.internalError")
     # Emit.write (line 4 ("(" <> quoted "no semantic action " <> " <> show puppyIndex)"))
   where
   entries start = Array.foldl one start
@@ -546,7 +546,7 @@ actionTable :: Input -> Emitter -> Emitter
 actionTable input = Emit.write
   ( sparseTable "actionRows" "{ on :: Int, take :: Runtime.Action }" rows
       <> "\nactionAt :: Int -> Int -> Runtime.Action\nactionAt puppyState puppyTerminal = case Array.index actionRows puppyState of\n"
-      <> line 2 "Maybe.Nothing -> Value.internalError"
+      <> line 2 "Maybe.Nothing -> Runtime.internalError"
       <> line 4 ("(" <> quoted "no action row for state " <> " <> show puppyState)")
       <> line 2 "Maybe.Just puppyRow -> case Array.find (\\puppyEntry -> puppyEntry.on == puppyTerminal) puppyRow of"
       <> line 4 "Maybe.Just puppyEntry -> puppyEntry.take"
@@ -564,11 +564,11 @@ gotoTable :: Input -> Emitter -> Emitter
 gotoTable input = Emit.write
   ( sparseTable "gotoRows" "{ on :: Int, to :: Int }" rows
       <> "\ngotoAt :: Int -> Int -> Int\ngotoAt puppyState puppyNonterminal = case Array.index gotoRows puppyState of\n"
-      <> line 2 "Maybe.Nothing -> Value.internalError"
+      <> line 2 "Maybe.Nothing -> Runtime.internalError"
       <> line 4 ("(" <> quoted "no goto row for state " <> " <> show puppyState)")
       <> line 2 "Maybe.Just puppyRow -> case Array.find (\\puppyEntry -> puppyEntry.on == puppyNonterminal) puppyRow of"
       <> line 4 "Maybe.Just puppyEntry -> puppyEntry.to"
-      <> line 4 "Maybe.Nothing -> Value.internalError"
+      <> line 4 "Maybe.Nothing -> Runtime.internalError"
       <> line 6 ("(" <> quoted "no goto from state " <> " <> show puppyState <> " <> quoted " on " <> " <> show puppyNonterminal)")
   )
   where
@@ -581,7 +581,7 @@ gotoTable input = Emit.write
 
 tableBuilder :: Input -> Emitter -> Emitter
 tableBuilder input = Emit.write
-  ( "\ntableFor :: Int -> Runtime.Table (Maybe.Maybe Token) Value.Value\ntableFor puppyStart =\n"
+  ( "\ntableFor :: Int -> Runtime.Table (Maybe.Maybe Token) Runtime.Value\ntableFor puppyStart =\n"
       <> line 2 "{ action: actionAt"
       <> line 2 ", goto: gotoAt"
       <> line 2 ", production: productionAt"
@@ -614,7 +614,7 @@ entryPoints input e = Array.foldl one e
               -- `Array String` would be read as two arguments.
               Just ty -> \out ->
                 Emit.write "(" out # writeFragment 2 ty # Emit.write ")"
-              Nothing -> Emit.write "Value.Value"
+              Nothing -> Emit.write "Runtime.Value"
           )
         # Emit.write "\n"
         # Emit.write
@@ -626,7 +626,7 @@ entryPoints input e = Array.foldl one e
                 <> line 4
                   "Either.Left puppyError -> Either.Left (toParseError puppyError)"
                 <> line 4
-                  "Either.Right puppyValue -> Either.Right (Value.unbox puppyValue)"
+                  "Either.Right puppyValue -> Either.Right (Runtime.unbox puppyValue)"
             )
 
 preamble :: Input -> Emitter -> Emitter
@@ -647,7 +647,6 @@ preamble input e =
         <> "import Data.Either as Either\n"
         <> "import Data.Maybe as Maybe\n"
         <> "import Puppy.Runtime as Runtime\n"
-        <> "import Puppy.Runtime.Value as Value\n"
     )
     e
     # header
