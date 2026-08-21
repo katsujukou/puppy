@@ -15,7 +15,6 @@ import Data.Array as Array
 import Data.Either as Either
 import Data.Maybe as Maybe
 import Puppy.Runtime as Runtime
-import Puppy.Runtime.Value as Value
 
 data Token
   = STATE
@@ -40,13 +39,13 @@ terminalIndex = case _ of
   Maybe.Just CTRL -> 3
   Maybe.Nothing -> 4
 
-terminalValue :: Maybe.Maybe Token -> Value.Value
+terminalValue :: Maybe.Maybe Token -> Runtime.Value
 terminalValue = case _ of
-  Maybe.Just STATE -> Value.box unit
-  Maybe.Just (VALUE puppyPayload) -> Value.box puppyPayload
-  Maybe.Just TAB -> Value.box unit
-  Maybe.Just CTRL -> Value.box unit
-  Maybe.Nothing -> Value.box unit
+  Maybe.Just STATE -> Runtime.box unit
+  Maybe.Just (VALUE puppyPayload) -> Runtime.box puppyPayload
+  Maybe.Just TAB -> Runtime.box unit
+  Maybe.Just CTRL -> Runtime.box unit
+  Maybe.Nothing -> Runtime.box unit
 
 terminalNames :: Array String
 terminalNames =
@@ -60,7 +59,7 @@ terminalNames =
 terminalName :: Int -> String
 terminalName puppyIndex = case Array.index terminalNames puppyIndex of
   Maybe.Just puppyFound -> puppyFound
-  Maybe.Nothing -> Value.internalError
+  Maybe.Nothing -> Runtime.internalError
     ("no name for terminal " <> show puppyIndex)
 
 productionTable :: Array Runtime.ProductionInfo
@@ -78,51 +77,51 @@ productionTable =
 productionAt :: Int -> Runtime.ProductionInfo
 productionAt puppyIndex = case Array.index productionTable puppyIndex of
   Maybe.Just puppyFound -> puppyFound
-  Maybe.Nothing -> Value.internalError
+  Maybe.Nothing -> Runtime.internalError
     ("no production " <> show puppyIndex)
 
-semanticActionTable :: Array (Array Value.Value -> Value.Value)
+semanticActionTable :: Array (Array Runtime.Value -> Runtime.Value)
 semanticActionTable =
   [ \puppyValues ->
       let
         row :: Int
-        row = Value.unbox (Value.slot 0 puppyValues)
+        row = Runtime.unbox (Runtime.slot 0 puppyValues)
       in
-        Value.box
+        Runtime.box
           ((row) :: Int)
   , \puppyValues ->
       let
         entry :: Int
-        entry = Value.unbox (Value.slot 0 puppyValues)
+        entry = Runtime.unbox (Runtime.slot 0 puppyValues)
       in
-        Value.box
+        Runtime.box
           ((entry) :: Int)
   , \_ ->
-      Value.box
+      Runtime.box
         ((0) :: Int)
   , \_ ->
-      Value.box
+      Runtime.box
         ((1) :: Int)
   , \_ ->
-      Value.box
+      Runtime.box
         ((2) :: Int)
   , \puppyValues ->
       let
         err :: Int
-        err = Value.unbox (Value.slot 0 puppyValues)
+        err = Runtime.unbox (Runtime.slot 0 puppyValues)
       in
-        Value.box
+        Runtime.box
           ((err) :: Int)
-  , \_ -> Value.internalError
+  , \_ -> Runtime.internalError
       "the start production has no semantic action"
-  , \_ -> Value.internalError
+  , \_ -> Runtime.internalError
       "the start production has no semantic action"
   ]
 
-semanticActionAt :: Int -> Array Value.Value -> Value.Value
+semanticActionAt :: Int -> Array Runtime.Value -> Runtime.Value
 semanticActionAt puppyIndex = case Array.index semanticActionTable puppyIndex of
   Maybe.Just puppyFound -> puppyFound
-  Maybe.Nothing -> Value.internalError
+  Maybe.Nothing -> Runtime.internalError
     ("no semantic action " <> show puppyIndex)
 
 actionRows :: Array (Array { on :: Int, take :: Runtime.Action })
@@ -141,7 +140,7 @@ actionRows =
 
 actionAt :: Int -> Int -> Runtime.Action
 actionAt puppyState puppyTerminal = case Array.index actionRows puppyState of
-  Maybe.Nothing -> Value.internalError
+  Maybe.Nothing -> Runtime.internalError
     ("no action row for state " <> show puppyState)
   Maybe.Just puppyRow -> case Array.find (\puppyEntry -> puppyEntry.on == puppyTerminal) puppyRow of
     Maybe.Just puppyEntry -> puppyEntry.take
@@ -163,14 +162,14 @@ gotoRows =
 
 gotoAt :: Int -> Int -> Int
 gotoAt puppyState puppyNonterminal = case Array.index gotoRows puppyState of
-  Maybe.Nothing -> Value.internalError
+  Maybe.Nothing -> Runtime.internalError
     ("no goto row for state " <> show puppyState)
   Maybe.Just puppyRow -> case Array.find (\puppyEntry -> puppyEntry.on == puppyNonterminal) puppyRow of
     Maybe.Just puppyEntry -> puppyEntry.to
-    Maybe.Nothing -> Value.internalError
+    Maybe.Nothing -> Runtime.internalError
       ("no goto from state " <> show puppyState <> " on " <> show puppyNonterminal)
 
-tableFor :: Int -> Runtime.Table (Maybe.Maybe Token) Value.Value
+tableFor :: Int -> Runtime.Table (Maybe.Maybe Token) Runtime.Value
 tableFor puppyStart =
   { action: actionAt
   , goto: gotoAt
@@ -199,10 +198,10 @@ input :: Array Token -> Either.Either (Runtime.ParseError Token) (Int)
 input puppyInput =
   case Runtime.parse (tableFor 0) (feed puppyInput) of
     Either.Left puppyError -> Either.Left (toParseError puppyError)
-    Either.Right puppyValue -> Either.Right (Value.unbox puppyValue)
+    Either.Right puppyValue -> Either.Right (Runtime.unbox puppyValue)
 
 state :: Array Token -> Either.Either (Runtime.ParseError Token) (Int)
 state puppyInput =
   case Runtime.parse (tableFor 1) (feed puppyInput) of
     Either.Left puppyError -> Either.Left (toParseError puppyError)
-    Either.Right puppyValue -> Either.Right (Value.unbox puppyValue)
+    Either.Right puppyValue -> Either.Right (Runtime.unbox puppyValue)
