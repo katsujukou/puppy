@@ -154,9 +154,9 @@ startsWith prefix text = SCU.take (SCU.length prefix) text == prefix
 -- | the recorded indent, with whatever leading space it had in the grammar
 -- | still in front of it -- which is what makes the layout survive the move.
 misplacedLines :: String -> SourceMapping -> Array String
-misplacedLines source m = Array.mapMaybe check (Array.mapWithIndex Tuple lines)
+misplacedLines source m = Array.mapMaybe check (Array.mapWithIndex Tuple fragment)
   where
-  lines = split (P.Pattern "\n")
+  fragment = split (P.Pattern "\n")
     ( SCU.take (m.source.end.offset - m.source.start.offset)
         (SCU.drop m.source.start.offset grammar)
     )
