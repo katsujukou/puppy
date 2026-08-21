@@ -5,7 +5,6 @@
 -- | one should be a matter of a `choose`, not a rewrite.
 module Puppy.CLI.Options
   ( Command(..)
-  , version
   , parse
   ) where
 
@@ -14,11 +13,9 @@ import Prelude
 import ArgParse.Basic as ArgParser
 import Data.Either (Either)
 import Puppy.CLI.Generate as Generate
+import Puppy.CLI.Version (version)
 
 data Command = Generate Generate.Options
-
-version :: String
-version = "0.1.0"
 
 command :: ArgParser.ArgParser Command
 command = (Generate <$> Generate.options)

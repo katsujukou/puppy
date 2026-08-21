@@ -1,3 +1,25 @@
 {
-  "type": "module"
+  "name": "purs-puppy",
+  "description": "An LR(1) parser generator for PureScript",
+  "version": "0.1.0",
+  "license": "MIT",
+  "keywords": [
+    "purescript",
+    "parser-generator"
+  ],
+  "type": "module",
+  "bin": {
+    "puppy": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "lib/"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "bundle": "cd .. && purs-backend-es bundle-module -p node -m Puppy.CLI.Main -t cli/lib/bundle.js",
+    "version": "echo 'export const version = \"v'$npm_package_version'\";' > ./src/Puppy/CLI/Version.js && git add ."
+  }
 }
