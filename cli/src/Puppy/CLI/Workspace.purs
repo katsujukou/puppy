@@ -22,7 +22,7 @@ module Puppy.CLI.Workspace
 
 import Prelude
 
-import Data.Argonaut.Core (Json, toObject, toString)
+import Data.Argonaut.Core (Json, toArray, toObject, toString)
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromMaybe)
@@ -61,28 +61,57 @@ type Grammar =
   , moduleName :: String
   }
 
--- | Every package in the workspace, as Spago sees it.
-packages :: forall r. Run (PROC + EXCEPT String + r) (Array Package)
-packages = do
-  -- `--quiet` because spago narrates its progress on standard error, and a
-  -- generator that says nothing on a good run should not borrow someone
-  -- else's voice to say it.
-  said <- Proc.capture "spago" [ "ls", "packages", "--json", "--quiet" ]
+-- | Where the workspace begins.
+-- |
+-- | Spago reports package paths relative to the workspace root, and Puppy is
+-- | not obliged to have been started there. Spago knows where the root is from
+-- | wherever it is run, and says so by naming the local cache inside it.
+workspaceRoot :: forall r. Run (PROC + EXCEPT String + r) String
+workspaceRoot = do
+  said <- ask [ "ls", "paths", "--json", "--quiet" ]
+  parseJson said notJson \json -> case cachePath json of
+    Just cache -> pure (Path.dirname cache)
+    Nothing -> Except.throw
+      "spago did not say where its local cache is, so the workspace root cannot be found"
+
+notJson :: forall r a. String -> Run (EXCEPT String + r) a
+notJson message = Except.throw
+  ( Fmt.fmt @"spago answered with something that is not JSON: {message}"
+      { message }
+  )
+
+-- | The local cache sits at the workspace root, whichever directory spago was
+-- | run from.
+cachePath :: Json -> Maybe String
+cachePath json = Array.findMap named =<< toArray json
+  where
+  named row = do
+    pair <- toArray row
+    name <- toString =<< Array.index pair 0
+    if name /= "Local cache path" then Nothing
+    else toString =<< Array.index pair 1
+
+-- | Ask spago something, and complain in a way that suggests what to do.
+ask :: forall r. Array String -> Run (PROC + EXCEPT String + r) String
+ask args = do
+  said <- Proc.capture "spago" args
   case said of
     Left message -> Except.throw
       ( Fmt.fmt
-          @"could not ask spago where its packages are: {message}\n\
-          \Naming a package only means something inside a spago workspace; \
-          \give a grammar and a module name instead."
+          @"could not ask spago about this workspace: {message}\nNaming a package only means something inside a spago workspace; give a grammar and a module name instead."
           { message }
       )
-    Right json -> parseJson json
-      ( \message -> Except.throw
-          ( Fmt.fmt @"spago answered with something that is not JSON: {message}"
-              { message }
-          )
-      )
-      (pure <<< workspaceOnly)
+    Right out -> pure out
+
+-- | Every package in the workspace, as spago sees it, at a path that does not
+-- | depend on where Puppy was started.
+packages :: forall r. Run (PROC + EXCEPT String + r) (Array Package)
+packages = do
+  root <- workspaceRoot
+  said <- ask [ "ls", "packages", "--json", "--quiet" ]
+  parseJson said notJson (pure <<< map (rooted root) <<< workspaceOnly)
+  where
+  rooted root package = package { path = Path.concat [ root, package.path ] }
 
 workspaceOnly :: Json -> Array Package
 workspaceOnly json = fromMaybe [] do
@@ -122,7 +151,7 @@ grammarsIn package = walk (Path.concat [ package.path, "src" ]) []
   walk dir prefix = do
     entries <- FS.readDir dir
     case entries of
-      Left problem -> Except.throw (FS.describe problem)
+      Left problem -> Except.throw =<< FS.blame problem
       Right Nothing -> pure []
       Right (Just names) -> map Array.concat (traverse (visit dir prefix) names)
 
@@ -131,7 +160,7 @@ grammarsIn package = walk (Path.concat [ package.path, "src" ]) []
       here = Path.concat [ dir, name ]
     directory <- FS.isDirectory here
     case directory of
-      Left problem -> Except.throw (FS.describe problem)
+      Left problem -> Except.throw =<< FS.blame problem
       Right true -> walk here (Array.snoc prefix name)
       Right false -> pure (grammarAt dir prefix name)
 

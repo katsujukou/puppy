@@ -59,6 +59,7 @@ filesystem = case _ of
   MkdirP path k -> k <$> liftEffect (mkdirPImpl Left (Right unit) path)
   Remove path k -> k <$> liftEffect (removeImpl Left (Right unit) path)
   SameFile a b k -> k <$> liftEffect (sameFileImpl Left Right a b)
+  Relative path k -> k <$> liftEffect (relativeImpl path)
 
 -- | Errors and warnings to stderr, so that a shell can keep them apart from
 -- | whatever else is being written.
@@ -97,6 +98,8 @@ foreign import removeImpl :: forall a. (IOError -> a) -> a -> String -> Effect a
 
 foreign import sameFileImpl
   :: forall a. (IOError -> a) -> (Boolean -> a) -> String -> String -> Effect a
+
+foreign import relativeImpl :: String -> Effect String
 
 -- | Run a program and return its standard output. Its standard error is left
 -- | alone, so that a tool with something to say still says it.

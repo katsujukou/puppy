@@ -20,7 +20,9 @@ module Puppy.CLI.Effect.Filesystem
   , mkdirP
   , remove
   , sameFile
+  , relative
   , describe
+  , blame
   ) where
 
 import Prelude
@@ -55,6 +57,9 @@ data FilesystemF a
   -- | Would writing to the second clobber the first? Two names can reach one
   -- | file, and comparing the names cannot tell.
   | SameFile String String (Either IOError Boolean -> a)
+  -- | This path as someone standing here would write it. For saying things,
+  -- | not for reaching anything.
+  | Relative String (String -> a)
 
 derive instance Functor FilesystemF
 
@@ -87,3 +92,16 @@ remove path = Run.lift _fs (Remove path identity)
 
 sameFile :: forall r. String -> String -> Run (FS + r) (Either IOError Boolean)
 sameFile a b = Run.lift _fs (SameFile a b identity)
+
+relative :: forall r. String -> Run (FS + r) String
+relative path = Run.lift _fs (Relative path identity)
+
+-- | A filesystem failure, with its path written the way the reader would.
+-- |
+-- | `describe` is the pure form, for when there is no effect to hand. Anything
+-- | reporting to a person should use this one, so that a single run does not
+-- | mix relative and absolute paths.
+blame :: forall r. IOError -> Run (FS + r) String
+blame problem = do
+  shown <- relative problem.path
+  pure (describe problem { path = shown })

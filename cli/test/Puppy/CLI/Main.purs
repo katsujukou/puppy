@@ -11,11 +11,11 @@ import Data.Argonaut.Core (Json)
 import Data.Array as Array
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..))
-import Data.Tuple (Tuple(..))
+import Data.Maybe (Maybe(..), fromMaybe)
+import Data.String (Pattern(..), stripPrefix)
+import Data.Tuple (Tuple(..), fst)
 import Effect (Effect)
 import Data.Either (Either(..), either, isLeft)
-import Data.Tuple (fst)
 import Puppy.CLI.Effect.Filesystem (FilesystemF(..))
 import Puppy.CLI.Effect.Log (LogF(..))
 import Puppy.CLI.Effect.Log as Log
@@ -28,7 +28,6 @@ import Puppy.CLI.Workspace (Grammar, Package)
 import Puppy.CLI.Workspace as Workspace
 import Run (Run)
 import Run as Run
-import Run.Except (EXCEPT)
 import Run.State (STATE)
 import Run.State as State
 import Run.Except as Except
@@ -59,8 +58,43 @@ fake unreadable = case _ of
   MkdirP _ k -> pure (k (Right unit))
   Remove _ k -> pure (k (Right unit))
   SameFile a b k -> pure (k (Right (a == b)))
+  Relative path k -> pure (k path)
   where
   refusal path = { path, reason: "permission denied" }
+
+-- | Where a workspace sits when it is not where the tool was run. Spago reports
+-- | package paths rooted at the workspace, so they reach discovery absolute.
+elsewhere :: String
+elsewhere = "/somewhere/else"
+
+-- | A filesystem under that root, with one of the two operations discovery
+-- | performs refusing. `Relative` behaves as the Node interpreter does: it
+-- | brings a path back down to where the reader is standing.
+rooted :: forall r. { refuseDir :: Boolean } -> FilesystemF ~> Run r
+rooted { refuseDir } = case _ of
+  ReadDir path k
+    | refuseDir -> pure (k (Left (refusal path)))
+    | otherwise -> pure (k (Right (Just [ "Foo" ])))
+  IsDirectory path k
+    | refuseDir -> pure (k (Right false))
+    | otherwise -> pure (k (Left (refusal path)))
+  Relative path k ->
+    pure (k (fromMaybe path (stripPrefix (Pattern (elsewhere <> "/")) path)))
+  ReadText path k -> pure (k (Left (refusal path)))
+  WriteText _ _ k -> pure (k (Right unit))
+  MkdirP _ k -> pure (k (Right unit))
+  Remove _ k -> pure (k (Right unit))
+  SameFile a b k -> pure (k (Right (a == b)))
+  where
+  refusal path = { path, reason: "permission denied" }
+
+discoverAt :: { refuseDir :: Boolean } -> Either String (Array Grammar)
+discoverAt how = Run.extract
+  ( Except.runExcept
+      ( FS.interpret (rooted how)
+          (Workspace.grammarsIn { name: "demo", path: elsewhere <> "/demo" })
+      )
+  )
 
 demo :: Package
 demo = { name: "demo", path: "demo" }
@@ -101,6 +135,7 @@ recording = case _ of
   ReadDir _ k -> pure (k (Right Nothing))
   IsDirectory _ k -> pure (k (Right false))
   SameFile a b k -> pure (k (Right (a == b)))
+  Relative path k -> pure (k path)
 
 quiet :: forall r. LogF ~> Run r
 quiet = case _ of
@@ -117,7 +152,7 @@ asked :: Options -> Array String -> Array String
 asked opts conflicts = fst
   ( Run.extract
       ( State.runState []
-          (FS.interpret recording (Log.interpret quiet (Generate.reportConflicts opts grammar conflicts)))
+          (FS.interpret recording (Log.interpret quiet (Generate.reportConflicts opts grammar grammar.source conflicts)))
       )
   )
 
@@ -150,6 +185,32 @@ byPath = explaining
   , moduleName = Just "Foo"
   , emitExplain = false
   }
+
+-- | A spago that answers the two questions Puppy asks it, from a workspace
+-- | rooted somewhere other than where Puppy was started.
+spagoAt :: forall r. String -> ProcessF ~> Run r
+spagoAt root = case _ of
+  Capture _ args k
+    | Array.elem "paths" args -> pure
+        ( k
+            ( Right
+                ("[[\"Local cache path\", \"" <> root <> "/.spago\"]]")
+            )
+        )
+    | otherwise -> pure (k (Right packagesJson))
+
+packagesJson :: String
+packagesJson =
+  """
+  { "prelude": { "type": "registry", "value": { "version": "6.0.1" } }
+  , "demo": { "type": "workspace", "value": { "path": "demo", "package": { "name": "demo" } } }
+  , "tools": { "type": "workspace", "value": { "path": "packages/tools", "package": { "name": "tools" } } }
+  }
+  """
+
+listed :: String -> Either String (Array Package)
+listed root = Run.extract
+  (Except.runExcept (Proc.interpret (spagoAt root) Workspace.packages))
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
@@ -188,6 +249,17 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       discover [ "demo/src/Foo" ]
         `shouldEqual` Left "demo/src/Foo: permission denied"
 
+    -- Package paths are rooted at the workspace so that the tool works from
+    -- anywhere; a failure while looking through one must still be reported the
+    -- way every other path this run mentions is.
+    it "says which directory it could not read, from where the reader is" do
+      discoverAt { refuseDir: true }
+        `shouldEqual` Left "demo/src: permission denied"
+
+    it "says which entry it could not stat, from where the reader is" do
+      discoverAt { refuseDir: false }
+        `shouldEqual` Left "demo/src/Foo: permission denied"
+
   describe "Puppy.CLI.Generate" do
     it "writes a report beside a grammar that has conflicts" do
       asked explaining [ "a conflict" ]
@@ -217,3 +289,14 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "takes an output path that is somewhere else" do
       map (map _.output) (resolving (byPath { output = Just "build/Foo.purs" }))
         `shouldEqual` Right [ "build/Foo.purs" ]
+
+    -- Spago reports package paths relative to the workspace root, and Puppy is
+    -- not obliged to have been started there. Resolving them where Puppy
+    -- happens to stand finds nothing and says so cheerfully.
+    it "roots package paths at the workspace, not at the working directory" do
+      map (map _.path) (listed "/somewhere/else")
+        `shouldEqual` Right [ "/somewhere/else/demo", "/somewhere/else/packages/tools" ]
+
+    it "keeps looking for the same packages wherever it was run" do
+      map (map _.name) (listed "/elsewhere/again")
+        `shouldEqual` Right [ "demo", "tools" ]

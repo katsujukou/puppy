@@ -12,7 +12,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
 const problem = (path, e) => ({ path, reason: e.message });
 
@@ -148,3 +148,14 @@ export const captureImpl = (command) => (args) => () =>
     encoding: "utf8",
     stdio: ["ignore", "pipe", "inherit"],
   });
+
+// How someone standing here would write this path.
+//
+// Under the current directory that is the short form. Outside it the relative
+// form is a chain of `..` that is longer than the absolute path and harder to
+// read, so the absolute path wins.
+export const relativeImpl = (path) => () => {
+  const here = relative(process.cwd(), path);
+  if (here === "") return ".";
+  return here.startsWith("..") ? path : here;
+};

@@ -19,7 +19,7 @@ import Prelude
 
 import ArgParse.Basic as ArgParser
 import Data.Array as Array
-import Data.Either (Either(..), either)
+import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromMaybe, isJust)
 import Data.String as String
 import Data.String.Common (joinWith)
@@ -134,25 +134,27 @@ generateOne
   -> Grammar
   -> Run (FS + LOG + EXCEPT String + r) (Maybe String)
 generateOne opts target = do
+  -- Worked out once and used for every path this run says out loud. Paths are
+  -- resolved from the workspace root so that the tool works from anywhere, and
+  -- read back from where the reader is standing so that they are short.
+  shown <- FS.relative target.source
   read <- FS.readText target.source
   case read of
-    Left problem -> pure (Just (FS.describe problem))
+    Left problem -> Just <$> FS.blame problem
     Right source -> case Pipeline.compile { moduleName: target.moduleName } source of
-      Left problems -> pure (Just (joinWith "\n" (map (render target.source) problems)))
+      Left problems -> pure (Just (joinWith "\n" (map (render shown) problems)))
       Right compiled -> do
-        told <- reportConflicts opts target compiled.conflicts
+        told <- reportConflicts opts target shown compiled.conflicts
         case told of
           Just problem -> pure (Just problem)
           Nothing
             | Array.null compiled.conflicts || opts.allowConflicts ->
-                write target compiled.source
+                write target shown compiled.source
             | otherwise -> pure
                 ( Just
                     ( Fmt.fmt
                         @"{path}: {count} unsettled conflict(s); nothing written. Settle them, or pass --allow-conflicts."
-                        { path: target.source
-                        , count: Array.length compiled.conflicts
-                        }
+                        { path: shown, count: Array.length compiled.conflicts }
                     )
                 )
 
@@ -160,20 +162,19 @@ write
   :: forall r
    . Grammar
   -> String
+  -> String
   -> Run (FS + LOG + r) (Maybe String)
-write target source = do
+write target shown source = do
   made <- FS.mkdirP (Path.dirname target.output)
   case made of
-    Left problem -> pure (Just (FS.describe problem))
+    Left problem -> Just <$> FS.blame problem
     Right _ -> do
       written <- FS.writeText target.output source
       case written of
-        Left problem -> pure (Just (FS.describe problem))
+        Left problem -> Just <$> FS.blame problem
         Right _ -> do
           Log.info
-            ( Fmt.fmt @"{path} -> {name}"
-                { path: target.source, name: target.moduleName }
-            )
+            (Fmt.fmt @"{path} -> {name}" { path: shown, name: target.moduleName })
           pure Nothing
 
 -- | Where a grammar's conflict report goes, when it is asked for.
@@ -185,32 +186,33 @@ reportConflicts
   :: forall r
    . Options
   -> Grammar
+  -> String
   -> Array String
   -> Run (FS + LOG + r) (Maybe String)
-reportConflicts opts target conflicts
+reportConflicts opts target shown conflicts
   -- A report from a run when there were conflicts describes a grammar that no
   -- longer has them. Leaving it there would be answering an old question.
-  | Array.null conflicts && opts.emitExplain =
-      map (either (Just <<< FS.describe) (const Nothing))
-        (FS.remove (explainPath target))
+  | Array.null conflicts && opts.emitExplain = do
+      removed <- FS.remove (explainPath target)
+      case removed of
+        Left problem -> Just <$> FS.blame problem
+        Right _ -> pure Nothing
   | Array.null conflicts = pure Nothing
   | opts.emitExplain = do
       written <- FS.writeText (explainPath target) (joinWith "\n" conflicts)
       case written of
-        Left problem -> pure (Just (FS.describe problem))
+        Left problem -> Just <$> FS.blame problem
         Right _ -> do
+          report <- FS.relative (explainPath target)
           Log.warn
             ( Fmt.fmt @"{source}: {count} unsettled conflict(s), explained in {path}"
-                { source: target.source
-                , count: Array.length conflicts
-                , path: explainPath target
-                }
+                { source: shown, count: Array.length conflicts, path: report }
             )
           pure Nothing
   | otherwise = do
       Log.warn
         ( Fmt.fmt @"{path}:\n\n{report}"
-            { path: target.source, report: joinWith "\n" conflicts }
+            { path: shown, report: joinWith "\n" conflicts }
         )
       pure Nothing
 
