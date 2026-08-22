@@ -9,6 +9,7 @@ import Data.Either (either)
 import Data.Maybe (Maybe(..), maybe)
 import Data.Tuple.Nested ((/\))
 import Effect.Aff.Class (class MonadAff)
+import Effect.Class (liftEffect)
 import Effect.Class.Console as Console
 import Fmt as Fmt
 import Halogen (AttrName(..), ClassName(..))
@@ -24,6 +25,7 @@ import Puppy.Docs.UI.Hooks.UseNavigate (useNavigate)
 import Puppy.Docs.UI.Manifest (lookupByPath, manifestCodec, manifestJson)
 import Puppy.Docs.UI.Manifest as Manifest
 import Puppy.Docs.UI.Route (Route(..), docRoute, route, routePath)
+import Puppy.Docs.UI.Scroll as Scroll
 import Puppy.Docs.UI.SideMenuItem as SideMenuItem
 import Puppy.Docs.UI.Version (puppyVersion)
 import Puppy.Docs.UI.Views.Home as Home
@@ -47,6 +49,13 @@ make = Hooks.component \_ _ -> Hooks.do
       # either
           (printJsonDecodeError >>> Console.error)
           (Hooks.put manifestId)
+    pure Nothing
+
+  -- A new page starts at its top. The reader's position belongs to the page
+  -- they were on, not the one they asked for, and the content column keeps its
+  -- scroll offset across a route change because nothing about it is replaced.
+  Hooks.captures { route: navigator.currentRoute } Hooks.useTickEffect do
+    liftEffect Scroll.reset
     pure Nothing
 
   Hooks.pure $ render
@@ -178,7 +187,9 @@ make = Hooks.component \_ _ -> Hooks.do
                   ]
               ]
           , HH.div
-              [ HP.class_ $ ClassName "flex-1 min-h-0 overflow-y-auto" ]
+              [ HP.class_ $ ClassName "flex-1 min-h-0 overflow-y-auto"
+              , HP.id Scroll.contentId
+              ]
               [ HH.div [ HP.class_ $ ClassName "mx-auto max-w-3xl px-4 sm:px-8 py-8 sm:py-10" ]
                   [ renderRouterView ctx ]
               ]
