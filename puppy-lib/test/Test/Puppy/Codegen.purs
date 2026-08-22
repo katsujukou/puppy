@@ -199,7 +199,7 @@ spec = describe "Puppy.Codegen" do
       mentions source "INT (Int)"
       -- Verbatim, from the `%{ ... %}` block.
       mentions source "import Data.Maybe (Maybe(..))"
-      mentions source "total :: Array Token -> Either.Either"
+      mentions source "total :: Array Token -> Puppy.Deps.Either"
 
   -- Every line of the author's own code has to be findable again, not just the
   -- first: a compiler complaining about the second line of an action is the

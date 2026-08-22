@@ -174,7 +174,7 @@ semanticAction input indent index prod e = case prod.source >>= sourceAction of
     -- The productions added for the start symbols are never reduced by; the
     -- driver accepts instead.
     Emit.write
-      ( "\\_ -> Runtime.internalError\n"
+      ( "\\_ -> Puppy.Runtime.internalError\n"
           <> line indent (quoted "the start production has no semantic action")
       )
       e
@@ -236,7 +236,7 @@ scoped input indent path prod annotation boxed action@(Core.Action a) e =
                 (Array.index prod.rhs index >>= typeOfSymbol input)
             # Emit.write
                 ( line at
-                    ( b.name <> " = Runtime.unbox (Runtime.slot " <> show index <> " "
+                    ( b.name <> " = Puppy.Runtime.unbox (Puppy.Runtime.slot " <> show index <> " "
                         <> values
                         <> ")"
                     )
@@ -249,7 +249,7 @@ scoped input indent path prod annotation boxed action@(Core.Action a) e =
           spaced
             # Emit.write
                 ( line at
-                    ( b.name <> " = Runtime.unbox (" <> path <> "_" <> show i <> " "
+                    ( b.name <> " = Puppy.Runtime.unbox (" <> path <> "_" <> show i <> " "
                         <> values
                         <> ")"
                     )
@@ -268,7 +268,7 @@ scoped input indent path prod annotation boxed action@(Core.Action a) e =
 
       opened =
         if boxed then
-          Emit.write (line at "Runtime.box") acc
+          Emit.write (line at "Puppy.Runtime.box") acc
             # Emit.write (spaces inner <> "(")
         else Emit.write (spaces inner <> "(") acc
     in
@@ -317,7 +317,7 @@ inlineHelperTable input e = Array.foldl one e (inlineHelpers input)
   where
   one acc helper =
     Emit.write
-      ( "\n" <> helper.name <> " :: Array Runtime.Value -> Runtime.Value\n"
+      ( "\n" <> helper.name <> " :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value\n"
           <> helper.name
           <> " "
           <> parameterFor helper.action
@@ -399,15 +399,15 @@ allTokens input = Array.snoc (tokenDecls input)
 
 terminalFunctions :: Input -> Emitter -> Emitter
 terminalFunctions input e =
-  Emit.write "\nterminalIndex :: Maybe.Maybe Token -> Int\nterminalIndex = case _ of\n" e
+  Emit.write "\nterminalIndex :: Puppy.Deps.Maybe Token -> Int\nterminalIndex = case _ of\n" e
     # flip (Array.foldl indexArm) numbered
-    # Emit.write "\nterminalValue :: Maybe.Maybe Token -> Runtime.Value\nterminalValue = case _ of\n"
+    # Emit.write "\nterminalValue :: Puppy.Deps.Maybe Token -> Puppy.Runtime.Value\nterminalValue = case _ of\n"
     # flip (Array.foldl valueArm) numbered
     # Emit.write "\nterminalNames :: Array String\n"
     # Emit.write (arrayBinding "terminalNames" (map (quoted <<< _.display) tokens))
-    # Emit.write "\nterminalName :: Int -> String\nterminalName puppyIndex = case Array.index terminalNames puppyIndex of\n"
-    # Emit.write (line 2 "Maybe.Just puppyFound -> puppyFound")
-    # Emit.write (line 2 "Maybe.Nothing -> Runtime.internalError")
+    # Emit.write "\nterminalName :: Int -> String\nterminalName puppyIndex = case Puppy.Deps.index terminalNames puppyIndex of\n"
+    # Emit.write (line 2 "Puppy.Deps.Just puppyFound -> puppyFound")
+    # Emit.write (line 2 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError")
     # Emit.write (line 4 ("(" <> quoted "no name for terminal " <> " <> show puppyIndex)"))
   where
   tokens = allTokens input
@@ -422,17 +422,17 @@ terminalFunctions input e =
 
   valueArm acc (Tuple i decl) = Emit.write
     ( line 2
-        ( pattern i decl "puppyPayload" <> " -> Runtime.box "
+        ( pattern i decl "puppyPayload" <> " -> Puppy.Runtime.box "
             <> (if isJust decl.payload then "puppyPayload" else "unit")
         )
     )
     acc
 
   pattern i decl bound =
-    if i == Array.length tokens - 1 then "Maybe.Nothing"
+    if i == Array.length tokens - 1 then "Puppy.Deps.Nothing"
     else if isJust decl.payload then
-      "Maybe.Just (" <> decl.constructor <> " " <> bound <> ")"
-    else "Maybe.Just " <> decl.constructor
+      "Puppy.Deps.Just (" <> decl.constructor <> " " <> bound <> ")"
+    else "Puppy.Deps.Just " <> decl.constructor
 
 -- | A multi-line array literal bound to a name, which is what these all want
 -- | to be.
@@ -451,17 +451,17 @@ arrayBinding name entries = case Array.uncons entries of
 
 renderRuntimeAction :: Action -> String
 renderRuntimeAction = case _ of
-  Shift target -> "Runtime.Shift " <> show target
-  Reduce production -> "Runtime.Reduce " <> show production
-  Accept -> "Runtime.Accept"
+  Shift target -> "Puppy.Runtime.Shift " <> show target
+  Reduce production -> "Puppy.Runtime.Reduce " <> show production
+  Accept -> "Puppy.Runtime.Accept"
 
 productionTable :: Input -> Emitter -> Emitter
 productionTable input = Emit.write
-  ( "\nproductionTable :: Array Runtime.ProductionInfo\n"
+  ( "\nproductionTable :: Array Puppy.Runtime.ProductionInfo\n"
       <> arrayBinding "productionTable" (map entry input.grammar.productions)
-      <> "\nproductionAt :: Int -> Runtime.ProductionInfo\nproductionAt puppyIndex = case Array.index productionTable puppyIndex of\n"
-      <> line 2 "Maybe.Just puppyFound -> puppyFound"
-      <> line 2 "Maybe.Nothing -> Runtime.internalError"
+      <> "\nproductionAt :: Int -> Puppy.Runtime.ProductionInfo\nproductionAt puppyIndex = case Puppy.Deps.index productionTable puppyIndex of\n"
+      <> line 2 "Puppy.Deps.Just puppyFound -> puppyFound"
+      <> line 2 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError"
       <> line 4 ("(" <> quoted "no production " <> " <> show puppyIndex)")
   )
   where
@@ -489,14 +489,14 @@ asCore input p =
 semanticActionTable :: Input -> Emitter -> Emitter
 semanticActionTable input e =
   Emit.write
-    "\nsemanticActionTable :: Array (Array Runtime.Value -> Runtime.Value)\nsemanticActionTable =\n"
+    "\nsemanticActionTable :: Array (Array Puppy.Runtime.Value -> Puppy.Runtime.Value)\nsemanticActionTable =\n"
     e
     # entries
     # Emit.write (line 2 "]")
     # Emit.write
-        "\nsemanticActionAt :: Int -> Array Runtime.Value -> Runtime.Value\nsemanticActionAt puppyIndex = case Array.index semanticActionTable puppyIndex of\n"
-    # Emit.write (line 2 "Maybe.Just puppyFound -> puppyFound")
-    # Emit.write (line 2 "Maybe.Nothing -> Runtime.internalError")
+        "\nsemanticActionAt :: Int -> Array Puppy.Runtime.Value -> Puppy.Runtime.Value\nsemanticActionAt puppyIndex = case Puppy.Deps.index semanticActionTable puppyIndex of\n"
+    # Emit.write (line 2 "Puppy.Deps.Just puppyFound -> puppyFound")
+    # Emit.write (line 2 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError")
     # Emit.write (line 4 ("(" <> quoted "no semantic action " <> " <> show puppyIndex)"))
   where
   entries start = Array.foldl one start
@@ -544,13 +544,13 @@ rowsByState count stateOf render cells =
 
 actionTable :: Input -> Emitter -> Emitter
 actionTable input = Emit.write
-  ( sparseTable "actionRows" "{ on :: Int, take :: Runtime.Action }" rows
-      <> "\nactionAt :: Int -> Int -> Runtime.Action\nactionAt puppyState puppyTerminal = case Array.index actionRows puppyState of\n"
-      <> line 2 "Maybe.Nothing -> Runtime.internalError"
+  ( sparseTable "actionRows" "{ on :: Int, take :: Puppy.Runtime.Action }" rows
+      <> "\nactionAt :: Int -> Int -> Puppy.Runtime.Action\nactionAt puppyState puppyTerminal = case Puppy.Deps.index actionRows puppyState of\n"
+      <> line 2 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError"
       <> line 4 ("(" <> quoted "no action row for state " <> " <> show puppyState)")
-      <> line 2 "Maybe.Just puppyRow -> case Array.find (\\puppyEntry -> puppyEntry.on == puppyTerminal) puppyRow of"
-      <> line 4 "Maybe.Just puppyEntry -> puppyEntry.take"
-      <> line 4 "Maybe.Nothing -> Runtime.Error"
+      <> line 2 "Puppy.Deps.Just puppyRow -> case Puppy.Deps.find (\\puppyEntry -> puppyEntry.on == puppyTerminal) puppyRow of"
+      <> line 4 "Puppy.Deps.Just puppyEntry -> puppyEntry.take"
+      <> line 4 "Puppy.Deps.Nothing -> Puppy.Runtime.Error"
   )
   where
   rows = rowsByState (Array.length input.automaton.states) _.state entry
@@ -563,12 +563,12 @@ actionTable input = Emit.write
 gotoTable :: Input -> Emitter -> Emitter
 gotoTable input = Emit.write
   ( sparseTable "gotoRows" "{ on :: Int, to :: Int }" rows
-      <> "\ngotoAt :: Int -> Int -> Int\ngotoAt puppyState puppyNonterminal = case Array.index gotoRows puppyState of\n"
-      <> line 2 "Maybe.Nothing -> Runtime.internalError"
+      <> "\ngotoAt :: Int -> Int -> Int\ngotoAt puppyState puppyNonterminal = case Puppy.Deps.index gotoRows puppyState of\n"
+      <> line 2 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError"
       <> line 4 ("(" <> quoted "no goto row for state " <> " <> show puppyState)")
-      <> line 2 "Maybe.Just puppyRow -> case Array.find (\\puppyEntry -> puppyEntry.on == puppyNonterminal) puppyRow of"
-      <> line 4 "Maybe.Just puppyEntry -> puppyEntry.to"
-      <> line 4 "Maybe.Nothing -> Runtime.internalError"
+      <> line 2 "Puppy.Deps.Just puppyRow -> case Puppy.Deps.find (\\puppyEntry -> puppyEntry.on == puppyNonterminal) puppyRow of"
+      <> line 4 "Puppy.Deps.Just puppyEntry -> puppyEntry.to"
+      <> line 4 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError"
       <> line 6 ("(" <> quoted "no goto from state " <> " <> show puppyState <> " <> quoted " on " <> " <> show puppyNonterminal)")
   )
   where
@@ -581,7 +581,7 @@ gotoTable input = Emit.write
 
 tableBuilder :: Input -> Emitter -> Emitter
 tableBuilder input = Emit.write
-  ( "\ntableFor :: Int -> Runtime.Table (Maybe.Maybe Token) Runtime.Value\ntableFor puppyStart =\n"
+  ( "\ntableFor :: Int -> Puppy.Runtime.Table (Puppy.Deps.Maybe Token) Puppy.Runtime.Value\ntableFor puppyStart =\n"
       <> line 2 "{ action: actionAt"
       <> line 2 ", goto: gotoAt"
       <> line 2 ", production: productionAt"
@@ -592,11 +592,11 @@ tableBuilder input = Emit.write
       <> line 2 (", terminalCount: " <> show (Array.length (allTokens input)))
       <> line 2 ", startState: puppyStart"
       <> line 2 "}"
-      <> "\nfeed :: Array Token -> Array (Maybe.Maybe Token)\nfeed puppyInput = Array.snoc (map Maybe.Just puppyInput) Maybe.Nothing\n"
-      <> "\n-- | End of input is `Maybe.Nothing` to the driver and nothing at all to a\n-- | caller, so an error that landed on it reports no token rather than one the\n-- | caller has no way to name.\ntoParseError\n"
-      <> line 2 ":: Runtime.ParseError (Maybe.Maybe Token)"
-      <> line 2 "-> Runtime.ParseError Token"
-      <> "toParseError puppyError =\n  puppyError { found = Maybe.fromMaybe Maybe.Nothing puppyError.found }\n"
+      <> "\nfeed :: Array Token -> Array (Puppy.Deps.Maybe Token)\nfeed puppyInput = Puppy.Deps.snoc (map Puppy.Deps.Just puppyInput) Puppy.Deps.Nothing\n"
+      <> "\n-- | End of input is `Puppy.Deps.Nothing` to the driver and nothing at all to a\n-- | caller, so an error that landed on it reports no token rather than one the\n-- | caller has no way to name.\ntoParseError\n"
+      <> line 2 ":: Puppy.Runtime.ParseError (Puppy.Deps.Maybe Token)"
+      <> line 2 "-> Puppy.Runtime.ParseError Token"
+      <> "toParseError puppyError =\n  puppyError { found = Puppy.Deps.fromMaybe Puppy.Deps.Nothing puppyError.found }\n"
   )
 
 entryPoints :: Input -> Emitter -> Emitter
@@ -607,33 +607,33 @@ entryPoints input e = Array.foldl one e
     let
       result = Map.lookup start.name (declaredTypes input)
     in
-      Emit.write ("\n" <> start.name <> " :: Array Token -> Either.Either (Runtime.ParseError Token) ") acc
+      Emit.write ("\n" <> start.name <> " :: Array Token -> Puppy.Deps.Either (Puppy.Runtime.ParseError Token) ") acc
         #
           ( case result of
               -- Parenthesised because it lands in an argument position: a bare
               -- `Array String` would be read as two arguments.
               Just ty -> \out ->
                 Emit.write "(" out # writeFragment 2 ty # Emit.write ")"
-              Nothing -> Emit.write "Runtime.Value"
+              Nothing -> Emit.write "Puppy.Runtime.Value"
           )
         # Emit.write "\n"
         # Emit.write
             ( start.name <> " puppyInput =\n"
                 <> line 2
-                  ( "case Runtime.parse (tableFor " <> show state
+                  ( "case Puppy.Runtime.parse (tableFor " <> show state
                       <> ") (feed puppyInput) of"
                   )
                 <> line 4
-                  "Either.Left puppyError -> Either.Left (toParseError puppyError)"
+                  "Puppy.Deps.Left puppyError -> Puppy.Deps.Left (toParseError puppyError)"
                 <> line 4
-                  "Either.Right puppyValue -> Either.Right (Runtime.unbox puppyValue)"
+                  "Puppy.Deps.Right puppyValue -> Puppy.Deps.Right (Puppy.Runtime.unbox puppyValue)"
             )
 
 preamble :: Input -> Emitter -> Emitter
 preamble input e =
   Emit.write
     ( "-- Generated by Puppy. Do not edit.\n--\n"
-        <> "-- End of input is not a token. It is the `Maybe.Nothing` the entry points\n"
+        <> "-- End of input is not a token. It is the `Puppy.Deps.Nothing` the entry points\n"
         <> "-- below append, which is why no caller can write one in the middle of the\n"
         <> "-- input and have the rest of it silently ignored.\n"
         <> "module "
@@ -643,10 +643,8 @@ preamble input e =
         <> joinWith "" (map (\s -> line 2 (", " <> s.name)) input.grammar.starts)
         <> line 2 ") where"
         <> "\nimport Prelude\n\n"
-        <> "import Data.Array as Array\n"
-        <> "import Data.Either as Either\n"
-        <> "import Data.Maybe as Maybe\n"
-        <> "import Puppy.Runtime as Runtime\n"
+        <> "import Puppy.Runtime as Puppy.Runtime\n"
+        <> "import Puppy.Runtime.Deps as Puppy.Deps\n"
     )
     e
     # header
