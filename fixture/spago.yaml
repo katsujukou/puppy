@@ -6,9 +6,6 @@
 package:
   name: puppy-fixture
   dependencies:
-    - arrays
-    - either
-    - maybe
     - prelude
     - puppy-runtime
   test:
@@ -17,3 +14,5 @@ package:
       - spec
       - spec-node
       - effect
+      - either
+      - maybe
