@@ -12,6 +12,7 @@ module Puppy.Names
   , isModuleName
   , isReserved
   , takenByGeneratedCode
+  , streamingName
   ) where
 
 import Prelude
@@ -94,12 +95,13 @@ takenByGeneratedCode name =
   Array.elem name
     [ "actionAt"
     , "actionRows"
-    , "feed"
+    , "fromResult"
     , "gotoAt"
     , "gotoRows"
     , "map"
     , "productionAt"
     , "productionTable"
+    , "runArray"
     , "semanticActionAt"
     , "semanticActionTable"
     , "show"
@@ -114,3 +116,12 @@ takenByGeneratedCode name =
     || startsWith "puppy" name
   where
   startsWith prefix text = SCU.take (SCU.length prefix) text == prefix
+
+-- | The name of the second entry point a start symbol produces: the one that
+-- | pulls its tokens rather than being handed all of them at once.
+-- |
+-- | Here rather than in the generator because two passes have to agree on it.
+-- | One writes the name; the other checks that no start symbol has already
+-- | taken it, which it cannot do without knowing how the name is made.
+streamingName :: String -> String
+streamingName name = name <> "From"

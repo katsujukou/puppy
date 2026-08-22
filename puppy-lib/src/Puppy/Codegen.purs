@@ -592,55 +592,101 @@ tableBuilder input = Emit.write
       <> line 2 (", terminalCount: " <> show (Array.length (allTokens input)))
       <> line 2 ", startState: puppyStart"
       <> line 2 "}"
-      <> "\nfeed :: Array Token -> Array (Puppy.Deps.Maybe Token)\nfeed puppyInput = Puppy.Deps.snoc (map Puppy.Deps.Just puppyInput) Puppy.Deps.Nothing\n"
       <> "\n-- | End of input is `Puppy.Deps.Nothing` to the driver and nothing at all to a\n-- | caller, so an error that landed on it reports no token rather than one the\n-- | caller has no way to name.\ntoParseError\n"
       <> line 2 ":: Puppy.Runtime.ParseError (Puppy.Deps.Maybe Token)"
       <> line 2 "-> Puppy.Runtime.ParseError Token"
       <> "toParseError puppyError =\n  puppyError { found = Puppy.Deps.fromMaybe Puppy.Deps.Nothing puppyError.found }\n"
+      <> "\nfromResult\n"
+      <> line 2 ":: forall puppyResult"
+      <> line 3 ". Puppy.Deps.Either (Puppy.Runtime.ParseError (Puppy.Deps.Maybe Token)) Puppy.Runtime.Value"
+      <> line 2 "-> Puppy.Deps.Either (Puppy.Runtime.ParseError Token) puppyResult"
+      <> "fromResult = case _ of\n"
+      <> line 2 "Puppy.Deps.Left puppyError -> Puppy.Deps.Left (toParseError puppyError)"
+      <> line 2 "Puppy.Deps.Right puppyValue -> Puppy.Deps.Right (Puppy.Runtime.unbox puppyValue)"
+      <> "\n-- | Feed the parser from an array, without building a second one.\n-- |\n-- | The driver's token here is `Puppy.Deps.Maybe Token`, and that is exactly\n-- | what a lookup past the end of an array answers, so the same\n-- | `Puppy.Deps.index` both reads a token and says there are no more.\nrunArray\n"
+      <> line 2 ":: Array Token"
+      <> line 2 "-> Int"
+      <> line 2 "-> Puppy.Runtime.Step (Puppy.Deps.Maybe Token) Puppy.Runtime.Value"
+      <> line 2 "-> Puppy.Deps.Either (Puppy.Runtime.ParseError (Puppy.Deps.Maybe Token)) Puppy.Runtime.Value"
+      <> "runArray puppyInput puppyIndex puppyStep = case puppyStep of\n"
+      <> line 2 "Puppy.Runtime.Await puppyResume ->"
+      <> line 4 "runArray puppyInput (puppyIndex + 1)"
+      <> line 6 "(Puppy.Runtime.resume puppyResume (Puppy.Deps.index puppyInput puppyIndex))"
+      <> line 2 "Puppy.Runtime.Done puppyValue -> Puppy.Deps.Right puppyValue"
+      <> line 2 "Puppy.Runtime.Failed puppyError -> Puppy.Deps.Left puppyError"
   )
 
+-- | The two ways in, for each `%start`.
+-- |
+-- | One takes the tokens all at once and one asks for them as it needs them.
+-- | They share a table and a state, and differ only in where the next token
+-- | comes from, which is the whole point of the driver being a machine that
+-- | stops rather than a loop over an array.
 entryPoints :: Input -> Emitter -> Emitter
 entryPoints input e = Array.foldl one e
   (Array.zipWith Tuple input.grammar.starts input.automaton.initial)
   where
+  -- Parenthesised because it lands in an argument position: a bare
+  -- `Array String` would be read as two arguments.
+  resultType start acc = case Map.lookup start.name (declaredTypes input) of
+    Just ty -> Emit.write "(" acc # writeFragment 2 ty # Emit.write ")"
+    Nothing -> Emit.write "Puppy.Runtime.Value" acc
+
   one acc (Tuple start state) =
-    let
-      result = Map.lookup start.name (declaredTypes input)
-    in
-      Emit.write ("\n" <> start.name <> " :: Array Token -> Puppy.Deps.Either (Puppy.Runtime.ParseError Token) ") acc
-        #
-          ( case result of
-              -- Parenthesised because it lands in an argument position: a bare
-              -- `Array String` would be read as two arguments.
-              Just ty -> \out ->
-                Emit.write "(" out # writeFragment 2 ty # Emit.write ")"
-              Nothing -> Emit.write "Puppy.Runtime.Value"
+    Emit.write
+      ( "\n" <> start.name
+          <> " :: Array Token -> Puppy.Deps.Either (Puppy.Runtime.ParseError Token) "
+      )
+      acc
+      # resultType start
+      # Emit.write "\n"
+      # Emit.write
+          ( start.name <> " puppyInput =\n"
+              <> line 2
+                ( "fromResult (runArray puppyInput 0 (Puppy.Runtime.start (tableFor "
+                    <> show state
+                    <> ")))"
+                )
           )
-        # Emit.write "\n"
-        # Emit.write
-            ( start.name <> " puppyInput =\n"
-                <> line 2
-                  ( "case Puppy.Runtime.parse (tableFor " <> show state
-                      <> ") (feed puppyInput) of"
-                  )
-                <> line 4
-                  "Puppy.Deps.Left puppyError -> Puppy.Deps.Left (toParseError puppyError)"
-                <> line 4
-                  "Puppy.Deps.Right puppyValue -> Puppy.Deps.Right (Puppy.Runtime.unbox puppyValue)"
-            )
+      # Emit.write
+          ( "\n" <> Names.streamingName start.name <> "\n"
+              <> line 2 ":: forall m"
+              <> line 3 ". Puppy.Deps.MonadRec m"
+              <> line 2 "=> m (Puppy.Deps.Maybe Token)"
+              <> spaces 2
+              <> "-> m (Puppy.Deps.Either (Puppy.Runtime.ParseError Token) "
+          )
+      # resultType start
+      # Emit.write ")\n"
+      # Emit.write
+          ( Names.streamingName start.name <> " puppyNext =\n"
+              <> line 2
+                ( "map fromResult (Puppy.Runtime.parseM (tableFor "
+                    <> show state
+                    <> ") puppyNext)"
+                )
+          )
 
 preamble :: Input -> Emitter -> Emitter
 preamble input e =
   Emit.write
     ( "-- Generated by Puppy. Do not edit.\n--\n"
-        <> "-- End of input is not a token. It is the `Puppy.Deps.Nothing` the entry points\n"
-        <> "-- below append, which is why no caller can write one in the middle of the\n"
-        <> "-- input and have the rest of it silently ignored.\n"
+        <> "-- End of input is not a token. It is `Puppy.Deps.Nothing`: an entry point\n"
+        <> "-- taking an array reaches it by running off the end, and one pulling its\n"
+        <> "-- tokens by asking for another and being told there are none. Either way no\n"
+        <> "-- caller can write one in the middle of the input and have the rest of it\n"
+        <> "-- silently ignored.\n"
         <> "module "
         <> input.moduleName
         <> "\n"
         <> line 2 "( Token(..)"
-        <> joinWith "" (map (\s -> line 2 (", " <> s.name)) input.grammar.starts)
+        <> joinWith ""
+          ( map
+              ( \s -> line 2 (", " <> s.name)
+                  <> line 2 (", " <> Names.streamingName s.name)
+              )
+              input.grammar.starts
+          )
         <> line 2 ") where"
         <> "\nimport Prelude\n\n"
         <> "import Puppy.Runtime as Puppy.Runtime\n"

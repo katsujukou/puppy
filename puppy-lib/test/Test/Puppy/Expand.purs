@@ -446,6 +446,27 @@ main: | x = loop { x }
       shouldFailWith "already uses"
         "%token A\n%start { X } tableFor\n%%\ntableFor: | A { 1 }\n"
 
+    -- Each start symbol produces two entry points, so two start symbols can
+    -- want the same generated name without either being declared twice.
+    it "rejects two start symbols whose entry points would collide" do
+      shouldFailWith "both produce an entry point"
+        "%token A\n%start { X } expr\n%start { X } exprFrom\n%%\nexpr: | A { 1 }\nexprFrom: | A { 2 }\n"
+
+    it "says which other start symbol it collided with, and where" do
+      shouldFailWith "`expr` (line 2, column 14)"
+        "%token A\n%start { X } expr\n%start { X } exprFrom\n%%\nexpr: | A { 1 }\nexprFrom: | A { 2 }\n"
+
+    -- The collision is between the names, not the order they were written in.
+    it "rejects the pair the other way round too" do
+      shouldFailWith "both produce an entry point"
+        "%token A\n%start { X } exprFrom\n%start { X } expr\n%%\nexpr: | A { 1 }\nexprFrom: | A { 2 }\n"
+
+    -- A start symbol ending in `From` is only a problem when something else
+    -- claims the same name.
+    it "accepts a start symbol ending in From on its own" do
+      productionsOf "%token A\n%start { X } exprFrom\n%%\nexprFrom: | A { 1 }\n"
+        `shouldEqual` Right [ "exprFrom -> A" ]
+
     it "rejects a binder that is a reserved word" do
       shouldFailWith "cannot be a PureScript value"
         "%token A\n%start { X } main\n%%\nmain: | let = A { 1 }\n"

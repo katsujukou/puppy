@@ -163,6 +163,7 @@ validate syn = Array.concat
   , startErrors
   , Array.concatMap badTokenName (tokensOf syn)
   , Array.concatMap badStartName syn.starts
+  , entryPointClashes
   , Array.concatMap unknownDerive syn.derives
   , duplicateErrors
       (\n -> "`" <> n <> "` is derived more than once")
@@ -224,6 +225,35 @@ validate syn = Array.concat
           }
         ]
     | otherwise = []
+
+  -- Each start symbol produces two top-level names: an entry point of its own
+  -- name, and one with `From` appended that pulls its tokens. Two start
+  -- symbols can therefore collide without either having been declared twice,
+  -- which is what the duplicate check above would have caught.
+  entryPointClashes =
+    _.errors (Array.foldl declare { taken: Map.empty, errors: [] } syn.starts)
+    where
+    declare acc s = Array.foldl (claim s) acc
+      [ s.symbol, Names.streamingName s.symbol ]
+
+    claim s acc name = case Map.lookup name acc.taken of
+      Just owner
+        | owner.symbol /= s.symbol ->
+            acc { errors = Array.snoc acc.errors (clashes s owner name) }
+      _ ->
+        acc { taken = Map.insert name { symbol: s.symbol, span: s.span } acc.taken }
+
+    clashes s owner name =
+      { message: "start symbols `" <> s.symbol <> "` and `" <> owner.symbol
+          <> "` (line "
+          <> show owner.span.start.line
+          <> ", column "
+          <> show owner.span.start.column
+          <> ") both produce an entry point called `"
+          <> name
+          <> "`; each start symbol produces one of its own name and one with `From` appended"
+      , span: s.span
+      }
 
   -- Only the classes whose demands on a payload type can be stated. A token
   -- may carry something with no `Eq` at all, which is why these are asked for
