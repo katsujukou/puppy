@@ -7,6 +7,7 @@ package:
     - maybe
     - partial
     - prelude
+    - tailrec
     - unsafe-coerce
   test:
     main: Test.Puppy.Runtime
@@ -16,3 +17,6 @@ package:
       - effect
       - datetime
       - now
+      - partial
+      - transformers
+      - tuples

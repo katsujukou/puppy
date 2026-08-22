@@ -2,15 +2,22 @@ module Test.Puppy.Runtime where
 
 import Prelude
 
+import Control.Monad.Error.Class (throwError)
+import Control.Monad.Except.Trans (ExceptT, runExceptT)
+import Control.Monad.State (State)
+import Control.Monad.State as State
+import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..))
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Time.Duration (Milliseconds(..))
+import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Now (now)
-import Puppy.Runtime (Action(..), Table, parse)
+import Partial.Unsafe (unsafeCrashWith)
+import Puppy.Runtime (Action(..), ParseError, Table, parse, parseM)
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
 import Test.Spec.Reporter (consoleReporter)
@@ -196,6 +203,64 @@ deepSize = 20000
 deepBudgetMs :: Number
 deepBudgetMs = 1000.0
 
+-- Deep enough that a runner which recursed through the monad rather than
+-- looping would have run out of stack long before the end.
+deepPullSize :: Int
+deepPullSize = 100000
+
+-- | The same table, unable to name a terminal.
+mute :: forall tok val. Table tok val -> Table tok val
+mute table = table
+  { terminalName = \_ ->
+      unsafeCrashWith "the expected set was worked out for a parse that did not fail"
+  }
+
+--------------------------------------------------------------------------------
+-- Pulling tokens one at a time.
+--------------------------------------------------------------------------------
+
+-- | How far a source has got, and how often it was asked.
+-- |
+-- | `pulls` is what tells a shift from a reduction here. A reduction runs on
+-- | the token the parser is already holding, so it must not reach the source;
+-- | counting is the only way to see that difference from outside.
+type Source = { index :: Int, pulls :: Int }
+
+-- | Hand out an array, then end of input -- once.
+-- |
+-- | Being asked for anything after the end marker is not something a parser is
+-- | allowed to do, so this says so rather than quietly answering again and
+-- | letting the test pass.
+pulling :: forall tok. tok -> Array tok -> State Source tok
+pulling eof input = do
+  source <- State.get
+  -- `if` rather than `when`: the arguments of a call are evaluated whether or
+  -- not the call uses them, and a crash is not a value that survives being
+  -- built and thrown away.
+  if source.index > Array.length input then
+    unsafeCrashWith "asked for a token after end of input"
+  else do
+    State.put { index: source.index + 1, pulls: source.pulls + 1 }
+    pure (fromMaybe eof (Array.index input source.index))
+
+pulled
+  :: forall tok val
+   . Table tok val
+  -> tok
+  -> Array tok
+  -> { result :: Either (ParseError tok) val, pulls :: Int }
+pulled table eof input =
+  case State.runState (parseM table (pulling eof input)) { index: 0, pulls: 0 } of
+    Tuple result source -> { result, pulls: source.pulls }
+
+-- | A lexer that gives up part way through, in a monad that can say so.
+lexing :: Int -> Array Tok -> ExceptT String (State Source) Tok
+lexing at input = do
+  source <- lift State.get
+  when (source.index == at) do
+    throwError ("no idea what to make of token " <> show at)
+  lift (pulling TEof input)
+
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
   describe "Puppy.Runtime" do
@@ -270,3 +335,72 @@ main = runSpecAndExitProcess [ consoleReporter ] do
             <> "ms, over the "
             <> show deepBudgetMs
             <> "ms budget -- the parser stacks are probably being copied again"
+
+    describe "pulling tokens" do
+      it "agrees with the array runner where the parse succeeds" do
+        let input = [ TNum 1, TPlus, TNum 2, TEof ]
+        (pulled exprTable TEof input).result `shouldEqual` parse exprTable input
+
+      it "agrees with the array runner where the parse fails" do
+        let input = [ TNum 1, TPlus, TRParen, TEof ]
+        (pulled exprTable TEof input).result `shouldEqual` parse exprTable input
+
+      it "asks once to begin with, and once after every shift" do
+        let out = pulled exprTable TEof [ TNum 1, TPlus, TNum 2, TEof ]
+        out.result `shouldEqual` Right 3
+        out.pulls `shouldEqual` 4
+
+      it "asks for nothing further once it has accepted" do
+        let out = pulled exprTable TEof [ TNum 7, TEof ]
+        out.result `shouldEqual` Right 7
+        out.pulls `shouldEqual` 2
+
+      -- Three pulls for two shifts: the token that fails the parse was asked
+      -- for like any other, because nothing can tell a token is wrong without
+      -- first having it. What does not happen is a fourth.
+      it "asks for nothing further once the parse has failed" do
+        let out = pulled exprTable TEof [ TNum 1, TPlus, TRParen, TEof ]
+        out.result `shouldEqual` Left
+          { position: 2
+          , found: Just TRParen
+          , state: 5
+          , expected: [ "n", "(" ]
+          }
+        out.pulls `shouldEqual` 3
+
+      it "runs a whole cascade of reductions on one token" do
+        -- Right recursion: nothing can be reduced until the end marker
+        -- arrives, and then everything is, one production after another. The
+        -- count is what says the source was left alone while that happened.
+        let
+          input = Array.snoc (Array.replicate deepSize RA) REof
+          out = pulled rightRecTable REof input
+        out.result `shouldEqual` Right deepSize
+        out.pulls `shouldEqual` (deepSize + 1)
+
+      it "pulls a long input without running out of stack" do
+        let
+          input = Array.snoc (Array.replicate deepPullSize RA) REof
+          out = pulled rightRecTable REof input
+        out.result `shouldEqual` Right deepPullSize
+
+      it "lets the source fail the parse" do
+        State.evalState
+          ( runExceptT
+              (parseM exprTable (lexing 2 [ TNum 1, TPlus, TNum 2, TEof ]))
+          )
+          { index: 0, pulls: 0 }
+          `shouldEqual` Left "no idea what to make of token 2"
+
+    describe "the expected set" do
+      -- Naming a terminal is the last step of working out `expected`, so a
+      -- table that cannot name one turns any attempt into a crash. Paying for
+      -- that at every token would cost the length of the input times the size
+      -- of the alphabet, to answer a question a successful parse never asks.
+      it "is not worked out for an array parse that succeeds" do
+        parse (mute exprTable) [ TNum 1, TPlus, TNum 2, TEof ]
+          `shouldEqual` Right 3
+
+      it "is not worked out for a pulled parse that succeeds" do
+        let input = Array.snoc (Array.replicate 100 RA) REof
+        (pulled (mute rightRecTable) REof input).result `shouldEqual` Right 100

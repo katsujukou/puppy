@@ -77,11 +77,15 @@
         },
         "test": {
           "dependencies": [
+            "arrays",
             "effect",
             "either",
+            "integers",
             "maybe",
             "spec",
-            "spec-node"
+            "spec-node",
+            "strings",
+            "transformers"
           ]
         }
       },
@@ -123,6 +127,7 @@
             "maybe",
             "partial",
             "prelude",
+            "tailrec",
             "unsafe-coerce"
           ]
         },
@@ -131,8 +136,11 @@
             "datetime",
             "effect",
             "now",
+            "partial",
             "spec",
-            "spec-node"
+            "spec-node",
+            "transformers",
+            "tuples"
           ]
         }
       }

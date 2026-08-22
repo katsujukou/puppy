@@ -5,6 +5,12 @@
 -- | only name here that a person is likely to need, and it is the type the
 -- | entry points return.
 -- |
+-- | The parser itself is also here, and it is worth knowing which shape of it
+-- | you are looking at. `parse` and `parseM` are the two runners a generated
+-- | module calls; `start`, `resume` and `unexpectedEnd` are the machine
+-- | underneath them, for a caller whose tokens arrive by some route neither
+-- | runner covers -- pushed from a callback, say, rather than pulled.
+-- |
 -- | What is behind it is split in two, for one reason.
 -- | [`Puppy.Runtime.Value`](Puppy.Runtime.Value.html) holds the box a parser
 -- | keeps its semantic values in, and with it the only two coercions in the
@@ -17,5 +23,5 @@ module Puppy.Runtime
   , module Puppy.Runtime.Value
   ) where
 
-import Puppy.Runtime.Driver (Action(..), ParseError, ProductionInfo, Table, parse)
+import Puppy.Runtime.Driver (Action(..), ParseError, ProductionInfo, Resume, Step(..), Table, parse, parseM, resume, start, unexpectedEnd)
 import Puppy.Runtime.Value (Value, box, internalError, slot, unbox)
