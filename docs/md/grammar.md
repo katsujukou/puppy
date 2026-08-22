@@ -44,9 +44,20 @@ import Ast (Expr(..))
 
 Imports and top-level declarations, within two limits.
 
-The module declaration is not yours to write — Puppy has already written one
-by the time the header is inserted — and `import Prelude` is already there, so
-repeating it is an error.
+The module declaration is not yours to write — Puppy has already written one by
+the time the header is inserted — and so is `import Prelude`, so repeating that
+one is a duplicate import (a warning, and an error under `--strict`).
+
+What Puppy needs for itself it imports under a `Puppy.` prefix:
+
+```purescript
+import Puppy.Runtime as Puppy.Runtime
+import Puppy.Runtime.Deps as Puppy.Deps
+```
+
+Those names are prefixed so that yours are free: a header may import
+`Data.Array as Array` and use `Array.snoc` in an action without colliding with
+anything Puppy wrote.
 
 The header ends at the first literal `%}`, wherever that falls. One inside a
 string or a comment ends it just the same, so a header cannot contain that

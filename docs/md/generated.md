@@ -91,24 +91,26 @@ would have worked.
 
 ```yaml
 dependencies:
-  - arrays
-  - either
-  - maybe
   - prelude
   - puppy-runtime
 ```
 
-`puppy-runtime` holds the table-driven parser the generated module calls, and
-the box its semantic values travel in. It is a small package that does not
-depend on the generator: building and shipping a parser does not need Puppy
-installed.
+`puppy-runtime` holds the table-driven parser the generated module calls, the
+box its semantic values travel in, and — in `Puppy.Runtime.Deps` — the handful
+of standard-library names the generated code itself uses. That last one is why
+this list is two lines: a package holding a generated parser should not have to
+depend on `arrays` on behalf of a file its author did not write.
+
+It is a small package that does not depend on the generator: building and
+shipping a parser does not need Puppy installed.
 
 > **Note** `puppy-runtime` is not in the PureScript registry yet. Until it is,
 > name it as an extra package pointing at the subdirectory it lives in — see
 > [getting started](getting-started.md#generating).
 
-Anything your semantic actions use is on top of that, imported in the grammar's
-[`%{ ... %}` header](grammar.md#the-header).
+Anything your own code uses is on top of this. Pattern matching the `Either` a
+parser returns means depending on `either` — because your code says `Left`, not
+because the generated module does.
 
 ## Lexing
 

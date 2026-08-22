@@ -72,16 +72,18 @@ This will generate a `Parser.purs` file right next to `src/Calculator/Parser.pur
 > puppy -p {YOUR_PACKAGE}
 > ```
 
-In order for the generated parser module to work as expected, your package needs `puppy-runtime` and the handful of packages:
+In order for the generated parser module to work as expected, your package needs `puppy-runtime`, and that is the whole of it:
 
 ```yaml
 dependencies:
-  - arrays
-  - either
-  - maybe
   - prelude
   - puppy-runtime
 ```
+
+The generated module is written against `Puppy.Runtime` and
+`Puppy.Runtime.Deps` alone, so nothing else has to be declared on its behalf.
+What your own code uses is on top — the lexer below wants `arrays`, `either`,
+`integers`, `maybe` and `strings`.
 
 > **Note** `puppy-runtime` is not in the PureScript registry yet. Until it is,
 > name it as an extra package pointing at the subdirectory it lives in:
