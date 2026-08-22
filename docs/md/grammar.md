@@ -283,3 +283,7 @@ something is usually wrong with the grammar.
 | Inlining work | 10,000,000 | A long chain of single-alternative inlining is rewritten end to end at every step |
 | LR states | 50,000 | |
 | Merge comparisons | 20,000,000 | Deciding whether two large states may merge is quadratic in their size |
+
+## Next Step
+
+Now that we understand the grammar DSL, [let's explore the generated parser module in more depth as our next step](./generated.md).
