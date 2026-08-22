@@ -1,8 +1,18 @@
 {
   "name": "purs-puppy",
-  "description": "An LR(1) parser generator for PureScript",
+  "description": "An LR parser generator for PureScript",
   "version": "0.1.0",
   "license": "MIT",
+  "author": "katsujukou",
+  "homepage": "https://katsujukou.github.io/puppy/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/katsujukou/puppy.git",
+    "directory": "cli"
+  },
+  "bugs": {
+    "url": "https://github.com/katsujukou/puppy/issues"
+  },
   "keywords": [
     "purescript",
     "parser-generator"
@@ -19,7 +29,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "bundle": "cd .. && purs-backend-es bundle-module -p node -m Puppy.CLI.Main -t cli/lib/bundle.js",
-    "version": "echo 'export const version = \"v'$npm_package_version'\";' > ./src/Puppy/CLI/Version.js && git add ."
+    "bundle": "cd .. && spago build -p puppy-cli --pure && purs-backend-es bundle-module -p node -m Puppy.CLI.Main -t cli/lib/bundle.js",
+    "prepublishOnly": "npm run bundle",
+    "version": "echo 'export const version = \"v'$npm_package_version'\";' > ./src/Puppy/CLI/Version.js && git add package.json ./src/Puppy/CLI/Version.js"
   }
 }

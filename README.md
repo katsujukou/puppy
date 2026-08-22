@@ -10,6 +10,29 @@ An LR(1) parser generator for PureScript
 Puppy is a parser generator for PureScript based on a minimal LR(1) algorithm.
 It compiles LR(1) grammar specifications down to PureScript code.
 
+## Installation
+
+```sh
+npm i -D purs-puppy
+```
+
+A generated parser depends on `puppy-runtime` and nothing else of Puppy's — the
+generator is not needed to build or run what it produced. Currently we haven't published that package to the registry yet, so for now name it as an extra package pointing at
+the subdirectory it lives in like this:
+
+```yaml
+workspace:
+  extraPackages:
+    puppy-runtime:
+      git: https://github.com/katsujukou/puppy.git
+      ref: v0.1.0
+      subdir: puppy-runtime
+```
+
+Pin `ref` to a tag rather than a branch, so that a build stays what it was. When
+`puppy-runtime` reaches the registry this block comes out and nothing else
+changes.
+
 ## Usage
 
 Puppy assumes that your project is organized using
