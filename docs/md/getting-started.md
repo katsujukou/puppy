@@ -146,23 +146,46 @@ Note which way the import goes: the lexer imports the generated module for its
 
 ## Put It Running
 
-The parser entry function, expression, which you declared with %start, consumes
-the token stream `Array Token` and produces Either ParseError Int:
+The parser entry function, `expression`, which you declared with `%start`, consumes
+the token stream `Array Token` and produces `Either (ParseError Token) Int`:
 
 ```purescript
-expression :: Array Token -> Either ParseError Int
+expression :: Array Token -> Either (ParseError Token) Int
 ```
 
 where `ParseError` is defined in the `puppy-runtime`'s user-facing module `Puppy.Runtime`.
+
+The lexer and the parser fail differently — one gives back a `String`, the
+other a `ParseError Token` — so joining the two is a decision of yours rather
+than one `>>=` can make on your behalf. For a calculator, rendering the parse
+error as text is enough:
+
+```purescript
+module Calculator (run) where
+
+import Prelude
+
+import Calculator.Lexer (tokenise)
+import Calculator.Parser (expression)
+import Data.Either (Either(..))
+
+run :: String -> Either String Int
+run input = case tokenise input of
+  Left err -> Left err
+  Right tokens -> case expression tokens of
+    Left err -> Left (show err)
+    Right value -> Right value
+```
+
 Now that all the components, including the lexer, parser, and evaluator, are in your hands,
 it's time to give your shiny calculator a try!
 
 ```purescript
-> tokenise "1 + 2 * 3" >>= expression
-Right 7
+> run "1 + 2 * 3"
+(Right 7)
 
-> tokenise "(1 + 2) * 3" >>= expression
-Right 9
+> run "(1 + 2) * 3"
+(Right 9)
 ```
 
 As you can see, `1 + 2 * 3` is 7 and not 9, thanks to the `%left TIMES` coming after `%left PLUS`
@@ -171,11 +194,13 @@ doing its job.
 ## When the input is wrong
 
 Now that we know the expression parser can correctly parse and evaluate well-formed
-expressions, let's play around a bit. Let's intentionally feed it a malformed expression:
+expressions, let's play around a bit. Let's intentionally feed it a malformed expression —
+this time straight to `expression`, so that the error arrives as it is rather than as the
+string `run` turned it into:
 
 ```purescript
-> tokenise "1 +" >>= expression
-Left { position: 2, found: Nothing, state: 5, expected: ["LPAREN","INT"] }
+> expression [ INT 1, PLUS ]
+(Left { expected: ["LPAREN","INT"], found: Nothing, position: 2, state: 5 })
 ```
 
 `position` indexes the token array. `found: Nothing` means the input ran out —
