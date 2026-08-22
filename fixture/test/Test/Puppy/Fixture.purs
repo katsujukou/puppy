@@ -8,9 +8,18 @@ module Test.Puppy.Fixture where
 
 import Prelude
 
+import Control.Monad.Error.Class (throwError)
+import Control.Monad.Except.Trans (ExceptT, runExceptT)
+import Control.Monad.State (State)
+import Control.Monad.State as State
+import Control.Monad.Trans.Class (lift)
+import Data.Array as Array
 import Data.Either (Either(..))
+import Data.Int as Int
 import Data.Maybe (Maybe(..))
+import Data.String.CodeUnits as SCU
 import Effect (Effect)
+import Puppy.Fixture.Calculator (Token(..))
 import Puppy.Fixture.Calculator as Calculator
 import Puppy.Fixture.Awkward as Awkward
 import Puppy.Fixture.Lists as Lists
@@ -25,6 +34,66 @@ leftOf :: forall e a. Either e a -> Maybe e
 leftOf = case _ of
   Left err -> Just err
   Right _ -> Nothing
+
+--------------------------------------------------------------------------------
+-- Handing the parser one token at a time.
+--
+-- The point of this lexer is what it does not do. There is no `Array Token`
+-- anywhere in it, and at no moment has the whole input been turned into
+-- tokens: what is left of the string is the whole of the state, and each token
+-- is built when the parser asks for it and dropped when it has been shifted.
+--
+-- `ExceptT` over `State` because a lexer has two things to say -- here is the
+-- next token, and I cannot read this -- and the monad the parser pulls in is
+-- where the second one goes. The parser needs no opinion about it.
+--------------------------------------------------------------------------------
+
+type Lexing = ExceptT String (State String)
+
+nextToken :: Lexing (Maybe Token)
+nextToken = do
+  rest <- lift (State.gets (SCU.dropWhile (_ == ' ')))
+  lift (State.put rest)
+  case SCU.uncons rest of
+    Nothing -> pure Nothing
+    Just { head, tail }
+      | head == '+' -> emit tail PLUS
+      | head == '*' -> emit tail TIMES
+      | head == '(' -> emit tail LPAREN
+      | head == ')' -> emit tail RPAREN
+      | isDigit head ->
+          let
+            digits = SCU.takeWhile isDigit rest
+          in
+            case Int.fromString digits of
+              Just n -> emit (SCU.drop (SCU.length digits) rest) (INT n)
+              Nothing -> throwError ("not a number: " <> digits)
+      | otherwise -> throwError ("unexpected character " <> show head)
+  where
+  emit rest token = do
+    lift (State.put rest)
+    pure (Just token)
+
+  isDigit c = c >= '0' && c <= '9'
+
+-- | Lex and parse together, in one pass over the text.
+calculate :: String -> Either String Int
+calculate input =
+  case State.evalState (runExceptT (Calculator.expressionFrom nextToken)) input of
+    Left lexError -> Left lexError
+    Right (Left parseError) -> Left ("parse error at " <> show parseError.position)
+    Right (Right value) -> Right value
+
+-- | The other kind of source: something already in hand, handed over a piece at
+-- | a time. Enough to exercise a second start symbol without a second lexer.
+oneAtATime :: forall tok. State (Array tok) (Maybe tok)
+oneAtATime = do
+  rest <- State.get
+  case Array.uncons rest of
+    Nothing -> pure Nothing
+    Just { head, tail } -> do
+      State.put tail
+      pure (Just head)
 
 main :: Effect Unit
 main = runSpecAndExitProcess [ consoleReporter ] do
@@ -136,3 +205,34 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         -- Written the same way the generator has to write it: `\x` is greedy,
         -- so the `A` would otherwise be read as part of the escape.
         `shouldEqual` Just [ "STATE", "VALUE", "a\tb", "x\x01" <> "Ay" ]
+
+  describe "a generated parser fed one token at a time" do
+    it "reaches the same answer as the array entry point" do
+      calculate "1 + 2 * 3" `shouldEqual` Right 7
+      Calculator.expression
+        [ Calculator.INT 1
+        , Calculator.PLUS
+        , Calculator.INT 2
+        , Calculator.TIMES
+        , Calculator.INT 3
+        ]
+        `shouldEqual` Right 7
+
+    it "obeys the same precedence, lexing as it goes" do
+      calculate "(1 + 2) * 3" `shouldEqual` Right 9
+
+    it "reports a syntax error at the token it counted" do
+      calculate "1 +" `shouldEqual` Left "parse error at 2"
+
+    -- The lexer's failure is not the parser's, and it does not have to be
+    -- turned into one to get out: it is already in the monad the parser is
+    -- running in, which abandons the parse on its own.
+    it "lets the lexer abandon the parse" do
+      calculate "1 @ 2" `shouldEqual` Left "unexpected character '@'"
+
+    it "gives every start symbol one of these too" do
+      State.evalState (Lists.itemsFrom oneAtATime)
+        [ Lists.A "x", Lists.COMMA, Lists.B "y" ]
+        `shouldEqual` Right [ "[x!]", "[y?]" ]
+      State.evalState (Lists.singleFrom oneAtATime) [ Lists.B "q" ]
+        `shouldEqual` Right "[q?]"

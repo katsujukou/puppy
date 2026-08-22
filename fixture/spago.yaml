@@ -13,6 +13,10 @@ package:
     dependencies:
       - spec
       - spec-node
+      - arrays
       - effect
       - either
+      - integers
       - maybe
+      - strings
+      - transformers
