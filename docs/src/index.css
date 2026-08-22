@@ -5,8 +5,7 @@
 /* Class-based dark mode: `dark:` utilities apply under `.dark` on <html>. */
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
-  /* Work Sans (rounded humanist sans, as on ocsigen.org) for prose,
+@theme {  /* Work Sans (rounded humanist sans, as on ocsigen.org) for prose,
      Fira Code for code / brand / chrome. */
   --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Fira Code", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -20,7 +19,7 @@
   --color-border: #d8dee4;
   --color-accent: #2563eb;
   --color-accent-soft: #e8f0fe; /* active item background */
-  --color-fg: #1f2328;
+  --color-fg: #111315;
   --color-fg-strong: #1d222d;
   --color-fg-sstrong: #9e2525;
   --color-fg-muted: #59636e;

@@ -85,7 +85,7 @@ make = Hooks.component \_ _ -> Hooks.do
                           []
                       ]
                   , HH.div
-                      [ HP.class_ $ ClassName "flex items-center gap-3 font-mono font-semibold tracking-tight text-[20px] whitespace-nowrap cursor-pointer hidden md:block"
+                      [ HP.class_ $ ClassName "hidden md:flex items-center gap-3 font-mono font-semibold tracking-tight text-[20px] whitespace-nowrap cursor-pointer"
                       , HE.onClick \_ -> ctx.navigateTo Home
                       ]
                       [ HH.span
@@ -93,7 +93,7 @@ make = Hooks.component \_ _ -> Hooks.do
                           , HP.style (maskImage (asset "img/book-icon.svg"))
                           ]
                           []
-                      , HH.text " Puppy Documentation"
+                      , HH.span [] [ HH.text "Puppy Documentation" ]
                       ]
                   ]
               , HH.div [ HP.class_ $ ClassName "flex items-center gap-4 sm:gap-5" ]
@@ -160,10 +160,16 @@ make = Hooks.component \_ _ -> Hooks.do
                         [ HP.class_ $ ClassName "px-3 pt-3 text-xs leading-relaxed text-fg-muted" ]
                         [ HH.span
                             [ HP.class_ $ ClassName "flex items-center gap-1" ]
-                            [ HH.img
-                                [ HP.src (asset "img/law-ico.svg")
-                                , HP.class_ $ ClassName "w-4 h-4"
+                            -- A mask rather than an `img`: the icon is two-tone
+                            -- maroon and pink, and the maroon all but vanishes
+                            -- against a dark surface. As a mask it is a
+                            -- silhouette in `currentColor`, so it matches the
+                            -- text beside it in either theme.
+                            [ HH.span
+                                [ HP.class_ $ ClassName "mask-icon w-4 h-4 shrink-0"
+                                , HP.style (maskImage (asset "img/law-ico.svg"))
                                 ]
+                                []
                             , HH.text "MIT licensed"
                             ]
                         , HH.text "© 2026 Katsujukou Kineya"
