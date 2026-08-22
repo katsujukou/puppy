@@ -1,4 +1,4 @@
--- | Turning a `.puppy` file into a flat token stream.
+-- | Turning a `.pursy` file into a flat token stream.
 -- |
 -- | The only hard part is finding where an embedded fragment of PureScript
 -- | ends, and `scanBraced` is where that happens.

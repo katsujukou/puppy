@@ -2,7 +2,7 @@
 -- |
 -- | Generated code contains stretches of the grammar author's own PureScript,
 -- | and when the compiler complains about one of them the complaint has to be
--- | traceable back to the `.puppy` file. That means knowing the line and column
+-- | traceable back to the `.pursy` file. That means knowing the line and column
 -- | each stretch was written at, which means counting as the output is built:
 -- | formatting the result afterwards would move everything and leave the
 -- | positions pointing at nothing.

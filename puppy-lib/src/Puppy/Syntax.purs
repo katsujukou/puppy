@@ -1,4 +1,4 @@
--- | The shape of a `.puppy` grammar file, as written.
+-- | The shape of a `.pursy` grammar file, as written.
 -- |
 -- | This is a faithful record of the source: nothing is resolved or desugared,
 -- | and every fragment of PureScript is kept verbatim with the span it came
@@ -54,7 +54,7 @@ type Span = { start :: Pos, end :: Pos }
 -- | where the binders are already bound.
 -- |
 -- | Keeping the span is what lets an error the PureScript compiler reports in
--- | the generated file be pointed back at a position in the `.puppy` source.
+-- | the generated file be pointed back at a position in the `.pursy` source.
 type Code = { text :: String, span :: Span }
 
 data Associativity
