@@ -30,7 +30,7 @@
   },
   "scripts": {
     "bundle": "cd .. && spago build -p puppy-cli --pure && purs-backend-es bundle-module -p node -m Puppy.CLI.Main -t cli/lib/bundle.js",
-    "prepublishOnly": "npm run bundle",
+    "prepack": "npm run bundle",
     "version": "echo 'export const version = \"v'$npm_package_version'\";' > ./src/Puppy/CLI/Version.js && git add package.json ./src/Puppy/CLI/Version.js"
   }
 }
