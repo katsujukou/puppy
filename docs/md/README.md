@@ -15,9 +15,10 @@ each rule means; Puppy works out the parsing table and writes a module.
 
 ## What Puppy is and is not
 
-Puppy is a *parser* generator. It does not produce a lexer: you hand it an
-array of tokens and it tells you what they mean. Splitting text into tokens is
-work you do yourself, or with a library made for it. This is the same division
+Puppy is a *parser* generator. It does not produce a lexer: you supply the
+tokens — all at once, or one at a time as the parser asks for them — and it
+tells you what they mean. Splitting text into tokens is work you do yourself,
+or with a library made for it. This is the same division
 Happy and Menhir make, and for the same reason — lexing is a small, separate
 problem with good answers of its own.
 

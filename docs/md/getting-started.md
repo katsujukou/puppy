@@ -144,6 +144,11 @@ tokenise input = go [] (SCU.toCharArray input)
 Note which way the import goes: the lexer imports the generated module for its
 `Token` type, and the generated module has no idea the lexer exists.
 
+This lexer turns the whole input into tokens before the parser sees any of it,
+which for a calculator is nothing at all. For a large input there is a second
+entry point that asks for tokens one at a time instead, and a lexer to match —
+see [lexing](generated.md#lexing).
+
 ## Put It Running
 
 The parser entry function, `expression`, which you declared with `%start`, consumes

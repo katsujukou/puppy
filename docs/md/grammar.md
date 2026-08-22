@@ -97,9 +97,15 @@ and rarely right for `PLUS`.
 %start { Array Stmt } program statements
 ```
 
-Each name becomes an exported function in the generated module, so it must
-begin with a lower case letter and must not be a name the generated code
-already uses. The `{ ... }` is the type that entry point returns.
+Each name becomes two exported functions in the generated module: one taking
+all the tokens at once, and one with `From` appended that asks for them one at
+a time. So a start symbol must begin with a lower case letter, must not be a
+name the generated code already uses, and must not collide with the pair
+another start symbol produces — `%start expr` and `%start exprFrom` together
+would want to write `exprFrom` twice, and Puppy says so rather than emitting a
+module that will not compile. See [entry points](generated.md#entry-points).
+
+The `{ ... }` is the type those entry points return.
 
 A start symbol must be a rule in the same file, must take no parameters, and
 must not be `%inline` — there would be nothing left to start from.
@@ -274,7 +280,7 @@ A grammar's names end up in different places, and each place has its own rules.
 | Where it came from | What it becomes | Must be |
 | --- | --- | --- |
 | `%token` name | a data constructor | upper case first |
-| `%start` symbol | an exported function | lower case first, not a name the generated code uses |
+| `%start` symbol | two exported functions | lower case first, not a name the generated code uses, not one another start symbol also produces |
 | binder | a `let` binding | lower case first, not a reserved word |
 
 Puppy checks these against the grammar rather than letting the PureScript
