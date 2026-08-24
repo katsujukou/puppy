@@ -1,0 +1,30 @@
+%{
+import Puppy.Fixture.External.Token as T
+%}
+
+%tokentype { T.Token }
+
+%token PLUS "+" { T.At _ T.Plus }
+%token TIMES "*" { T.At _ T.Times }
+%token { Int } NUMBER "a number" { T.At _ (T.Number $$) }
+
+-- Declared but never used in a rule, and its pattern holds a `$$` that is not a
+-- placeholder: it is inside a string literal, so the token carries no value.
+%token DOLLARS "$$" { T.At _ (T.Comment "$$") }
+
+%start { Int } total
+
+%type { Int } expr
+
+%left PLUS
+%left TIMES
+
+%%
+
+total:
+  | e = expr { e }
+
+expr:
+  | n = NUMBER              { n }
+  | a = expr PLUS b = expr  { a + b }
+  | a = expr TIMES b = expr { a * b }

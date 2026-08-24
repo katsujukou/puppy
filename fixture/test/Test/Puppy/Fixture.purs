@@ -20,6 +20,10 @@ import Data.Maybe (Maybe(..))
 import Data.String.CodeUnits as SCU
 import Effect (Effect)
 import Puppy.Fixture.Calculator (Token(..))
+import Puppy.Fixture.External.Calculator as External
+import Puppy.Fixture.External.Tally as Tally
+import Puppy.Fixture.External.Token as T
+import Puppy.Fixture.External.Word as W
 import Puppy.Fixture.Calculator as Calculator
 import Puppy.Fixture.Awkward as Awkward
 import Puppy.Fixture.Lists as Lists
@@ -236,3 +240,47 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         `shouldEqual` Right [ "[x!]", "[y?]" ]
       State.evalState (Lists.singleFrom oneAtATime) [ Lists.B "q" ]
         `shouldEqual` Right "[q?]"
+
+  describe "a generated parser over a token type Puppy did not write" do
+    it "reaches inside the token to find what the grammar named" do
+      External.total
+        [ T.At 0 (T.Number 2), T.At 2 T.Plus, T.At 4 (T.Number 3) ]
+        `shouldEqual` Right 5
+
+    it "keeps the precedence declarations" do
+      External.total
+        [ T.At 0 (T.Number 2)
+        , T.At 2 T.Plus
+        , T.At 4 (T.Number 3)
+        , T.At 6 T.Times
+        , T.At 8 (T.Number 4)
+        ]
+        `shouldEqual` Right 14
+
+    it "pulls those tokens one at a time too" do
+      State.evalState (External.totalFrom oneAtATime)
+        [ T.At 0 (T.Number 2), T.At 2 T.Times, T.At 4 (T.Number 3) ]
+        `shouldEqual` Right 6
+
+    -- The token type holds constructors this grammar has no opinion about, and
+    -- a lexer is entitled to produce one. What comes back is a syntax error
+    -- like any other, naming the token it could not use.
+    it "makes a token it never declared an ordinary syntax error" do
+      External.total [ T.At 0 (T.Number 1), T.At 2 T.Space ]
+        `shouldEqual` Left
+          { position: 1
+          , found: Just (T.At 2 T.Space)
+          , state: 1
+          , expected: [ "+", "*", "end of input" ]
+          }
+
+  -- The token type and the grammar name exactly the same things, so between
+  -- them the patterns cover it. Nothing is left for a fallback to catch, which
+  -- is what makes this the shape that a `case` and a dead arm would break.
+  describe "a generated parser whose external token type has nothing left over" do
+    it "parses through patterns that between them cover the type" do
+      Tally.tally [ W.Count 2, W.Yes, W.No, W.Count 3 ] `shouldEqual` Right 6
+
+    it "pulls those tokens one at a time too" do
+      State.evalState (Tally.tallyFrom oneAtATime) [ W.Yes, W.Count 4 ]
+        `shouldEqual` Right 5

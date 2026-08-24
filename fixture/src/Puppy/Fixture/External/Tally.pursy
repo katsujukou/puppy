@@ -1,0 +1,21 @@
+%{
+import Puppy.Fixture.External.Word as W
+%}
+
+%tokentype { W.Word }
+
+%token YES "yes" { W.Yes }
+%token NO "no" { W.No }
+%token { Int } COUNT "a count" { W.Count $$ }
+
+%start { Int } tally
+
+%type { Int } tally
+
+%%
+
+tally:
+  |                        { 0 }
+  | n = COUNT rest = tally { n + rest }
+  | YES rest = tally       { 1 + rest }
+  | NO rest = tally        { rest }
