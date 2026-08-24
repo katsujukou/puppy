@@ -18,7 +18,10 @@ module Puppy.Syntax
   , Code
   , Associativity(..)
   , TokenSource(..)
+  , TokenPattern
+  , ExternalToken
   , TokenDecl
+  , declaredTokens
   , StartDecl
   , TypeDecl
   , DeriveDecl
@@ -70,19 +73,62 @@ instance Show Associativity where
     AssocRight -> "AssocRight"
     AssocNone -> "AssocNone"
 
+-- | A `{ ... }` fragment that may contain `$$`.
+-- |
+-- | The text is the author's, verbatim, exactly as `Code` promises. `holes` is
+-- | where the `$$` placeholders were, as spans into the same source -- so the
+-- | generator can write the text out with something in their place without
+-- | rewriting a single character of the rest.
+-- |
+-- | Finding them is the lexer's job and not a search over this text, because a
+-- | `$$` inside a string literal or a comment is not a placeholder and no
+-- | amount of looking at the finished string can tell the difference.
+type TokenPattern = { code :: Code, holes :: Array Span }
+
 -- | Where the parser's token type comes from.
 -- |
--- | Only `GeneratedTokens` exists today: `%token` declarations are the single
--- | source of truth and Puppy emits a closed ADT from them. It is a sum rather
--- | than a bare array of declarations so that a future `%tokentype` -- a token
--- | type the user defines and Puppy merely refers to -- can be added beside it
--- | without disturbing anything that already matches on this.
-data TokenSource = GeneratedTokens (Array TokenDecl)
+-- | `GeneratedTokens` is the original arrangement: `%token` declarations are the
+-- | single source of truth and Puppy emits a closed ADT from them.
+-- |
+-- | `ExternalTokens` is a type the author already has. Puppy never names its
+-- | constructors; it is handed a pattern per terminal and matches with those,
+-- | which is what lets a token type carry things this grammar has no opinion
+-- | about -- comments, whitespace, a source span wrapped around everything.
+-- |
+-- | Which mode a grammar is in is settled once, when the declarations are
+-- | assembled, and the two carry different things because they need different
+-- | things: a pattern is meaningless without an external type to match against,
+-- | and a generated constructor is meaningless with one.
+data TokenSource
+  = GeneratedTokens (Array TokenDecl)
+  | ExternalTokens
+      { tokenType :: Code
+      , tokens :: Array ExternalToken
+      }
+
+-- | A `%token` in external mode: the declaration, and the pattern that picks
+-- | it out of the author's own type.
+type ExternalToken =
+  { decl :: TokenDecl
+  , pattern :: TokenPattern
+  }
 
 derive instance Eq TokenSource
 
 instance Show TokenSource where
-  show (GeneratedTokens decls) = "(GeneratedTokens " <> show decls <> ")"
+  show = case _ of
+    GeneratedTokens decls -> "(GeneratedTokens " <> show decls <> ")"
+    ExternalTokens spec -> "(ExternalTokens " <> show spec <> ")"
+
+-- | The declarations, whichever mode they came from.
+-- |
+-- | Almost everything downstream wants a terminal's name, display name and
+-- | payload type and nothing else; only the generator cares how the token is
+-- | recognised.
+declaredTokens :: TokenSource -> Array TokenDecl
+declaredTokens = case _ of
+  GeneratedTokens decls -> decls
+  ExternalTokens spec -> map _.decl spec.tokens
 
 -- | One `%token` declaration.
 -- |

@@ -16,6 +16,7 @@
 -- | amount of special-casing `->` and `=>` fixes the general case.
 module Puppy.Syntax.Lexer
   ( LexToken(..)
+  , Braced
   , Located
   , LexError
   , lex
@@ -31,6 +32,12 @@ import Data.Maybe (Maybe(..), maybe)
 import Data.String.CodeUnits as SCU
 import Puppy.Syntax (Code, Pos, Span)
 
+-- | A `{ ... }` fragment, and where inside it a `$$` stood.
+-- |
+-- | Only a token pattern has any use for the placeholders; every other kind of
+-- | fragment is a fragment with an empty array beside it.
+type Braced = { code :: Code, placeholders :: Array Span }
+
 data LexToken
   = TIdent String
   | TKeyword String
@@ -39,9 +46,9 @@ data LexToken
   -- ^ `%{ ... %}`
   | TSeparator
   -- ^ `%%`
-  | TBraced Code
-  -- ^ `{ ... }` -- a semantic action or a type annotation, depending on where
-  -- it turned up.
+  | TBraced Braced
+  -- ^ `{ ... }` -- a semantic action, a type annotation or a token pattern,
+  -- depending on where it turned up.
   | TString String
   -- ^ A quoted string, used for a token's display name.
   | TColon
@@ -168,11 +175,17 @@ data ScanMode
 -- |
 -- | The returned span covers the text between the braces, not the braces
 -- | themselves, since that text is what ends up in generated code.
+-- |
+-- | `placeholders` is where `$$` appeared. A token pattern uses it to say where
+-- | a payload sits; every other kind of fragment simply has none, and ignores
+-- | the field. Recording it here rather than searching the finished text is the
+-- | whole point: this scanner already knows a string literal from code, and a
+-- | `$$` inside one is not a placeholder.
 scanBraced
   :: Array Char
   -> Pos
-  -> Either LexError { code :: Code, next :: Pos }
-scanBraced chars start = loop inner ModeNormal 1 '{'
+  -> Either LexError { code :: Code, placeholders :: Array Span, next :: Pos }
+scanBraced chars start = loop inner ModeNormal 1 '{' Nil
   where
   inner = step chars start
 
@@ -181,86 +194,104 @@ scanBraced chars start = loop inner ModeNormal 1 '{'
   unterminated :: forall a. Either LexError a
   unterminated = Left { message: "unterminated `{ ... }` block", pos: start }
 
-  finish p = Right
+  finish p holes = Right
     { code:
         { text: slice chars inner.offset p.offset
         , span: { start: inner, end: p }
         }
+    , placeholders: Array.fromFoldable (List.reverse holes)
     , next: step chars p
     }
+
+  -- A `$$` is a placeholder only when it is a token of its own. PureScript
+  -- operators are a maximal run of symbol characters, so a symbol character on
+  -- either side makes this part of something else -- `$$$`, `<$$>` -- and not
+  -- a hole at all.
+  standalone p prev =
+    peek 1 p == Just '$'
+      && not (isSymbolChar prev)
+      && not (maybe false isSymbolChar (peek 2 p))
 
   loop
     :: Pos
     -> ScanMode
     -> Int
     -> Char
-    -> Either LexError { code :: Code, next :: Pos }
-  loop p mode depth prev = case Array.index chars p.offset of
+    -> List Span
+    -> Either LexError { code :: Code, placeholders :: Array Span, next :: Pos }
+  loop p mode depth prev holes = case Array.index chars p.offset of
     Nothing -> unterminated
     Just c -> case mode of
       ModeLineComment ->
-        loop (step chars p) (if c == '\n' then ModeNormal else mode) depth c
+        loop (step chars p) (if c == '\n' then ModeNormal else mode) depth c holes
 
       ModeBlockComment n
         | c == '{' && peek 1 p == Just '-' ->
-            loop (bump chars 2 p) (ModeBlockComment (n + 1)) depth '-'
+            loop (bump chars 2 p) (ModeBlockComment (n + 1)) depth '-' holes
         | c == '-' && peek 1 p == Just '}' ->
             loop (bump chars 2 p)
               (if n == 1 then ModeNormal else ModeBlockComment (n - 1))
               depth
               '}'
-        | otherwise -> loop (step chars p) mode depth c
+              holes
+        | otherwise -> loop (step chars p) mode depth c holes
 
       ModeString
-        | c == '\\' -> loop (bump chars 2 p) mode depth '\\'
-        | c == '"' -> loop (step chars p) ModeNormal depth c
-        | otherwise -> loop (step chars p) mode depth c
+        | c == '\\' -> loop (bump chars 2 p) mode depth '\\' holes
+        | c == '"' -> loop (step chars p) ModeNormal depth c holes
+        | otherwise -> loop (step chars p) mode depth c holes
 
       -- Triple-quoted strings are raw: a backslash in one is just a backslash.
       ModeTripleString
         | c == '"' && peek 1 p == Just '"' && peek 2 p == Just '"' ->
-            loop (bump chars 3 p) ModeNormal depth '"'
-        | otherwise -> loop (step chars p) mode depth c
+            loop (bump chars 3 p) ModeNormal depth '"' holes
+        | otherwise -> loop (step chars p) mode depth c holes
 
       ModeChar
-        | c == '\\' -> loop (bump chars 2 p) mode depth '\\'
-        | c == '\'' -> loop (step chars p) ModeNormal depth c
-        | otherwise -> loop (step chars p) mode depth c
+        | c == '\\' -> loop (bump chars 2 p) mode depth '\\' holes
+        | c == '\'' -> loop (step chars p) ModeNormal depth c holes
+        | otherwise -> loop (step chars p) mode depth c holes
 
       ModeNormal
         | c == '"' ->
             if peek 1 p == Just '"' && peek 2 p == Just '"' then
-              loop (bump chars 3 p) ModeTripleString depth '"'
+              loop (bump chars 3 p) ModeTripleString depth '"' holes
             else
-              loop (step chars p) ModeString depth c
+              loop (step chars p) ModeString depth c holes
 
         -- A quote straight after an identifier character is a prime, as in
         -- `xs'`, not the opening of a character literal.
-        | c == '\'' && isIdentChar prev -> loop (step chars p) mode depth c
-        | c == '\'' -> loop (step chars p) ModeChar depth c
+        | c == '\'' && isIdentChar prev -> loop (step chars p) mode depth c holes
+        | c == '\'' -> loop (step chars p) ModeChar depth c holes
 
         -- Checked before the opening brace, so that `{-` opens a comment
         -- rather than nesting a brace.
         | c == '{' && peek 1 p == Just '-' ->
-            loop (bump chars 2 p) (ModeBlockComment 1) depth '-'
+            loop (bump chars 2 p) (ModeBlockComment 1) depth '-' holes
 
-        | c == '-' && peek 1 p == Just '-' -> dashes p depth
+        | c == '-' && peek 1 p == Just '-' -> dashes p depth holes
 
-        | c == '{' -> loop (step chars p) mode (depth + 1) c
+        | c == '$' && standalone p prev ->
+            let
+              after = bump chars 2 p
+            in
+              loop after mode depth '$' ({ start: p, end: after } : holes)
+
+        | c == '{' -> loop (step chars p) mode (depth + 1) c holes
         | c == '}' ->
-            if depth == 1 then finish p
-            else loop (step chars p) mode (depth - 1) c
+            if depth == 1 then finish p holes
+            else loop (step chars p) mode (depth - 1) c holes
 
-        | otherwise -> loop (step chars p) mode depth c
+        | otherwise -> loop (step chars p) mode depth c holes
 
   -- Two or more dashes open a line comment unless a symbol character follows
   -- the run, which makes the whole thing an operator such as `-->`.
-  dashes p depth =
+  dashes p depth holes =
     let
       end = takeWhileFrom chars (_ == '-') p
       after = maybe false isSymbolChar (Array.index chars end.offset)
     in
-      loop end (if after then ModeNormal else ModeLineComment) depth '-'
+      loop end (if after then ModeNormal else ModeLineComment) depth '-' holes
 
 -- | `%{ ... %}`. Unlike a braced fragment this is scanned for a literal `%}`:
 -- | the header is arbitrary top-of-file PureScript, and `%}` is not a sequence
@@ -344,7 +375,12 @@ lex source = map (Array.fromFoldable <<< List.reverse) (go origin Nil)
       | c == '{' ->
           case scanBraced chars pos of
             Left err -> Left err
-            Right r -> go r.next (located (TBraced r.code) pos r.next : acc)
+            Right r ->
+              go r.next
+                ( located (TBraced { code: r.code, placeholders: r.placeholders })
+                    pos
+                    r.next : acc
+                )
 
       | c == '"' ->
           case scanString chars pos of

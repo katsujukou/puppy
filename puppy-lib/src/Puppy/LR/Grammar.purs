@@ -32,6 +32,7 @@ import Puppy.Grammar (Symbol(..))
 import Puppy.Grammar as Core
 import Data.Map (Map)
 import Puppy.Syntax (Associativity, Span, eofToken)
+import Puppy.Syntax as Syntax
 
 data Sym
   = T Int
@@ -124,7 +125,8 @@ number core = do
     errors -> Left errors
   where
   terminals =
-    map (\t -> { name: t.name, display: t.display }) core.terminals
+    map (\t -> { name: t.name, display: t.display })
+      (Syntax.declaredTokens core.tokens)
       <> [ { name: eofToken.name, display: eofToken.display } ]
 
   eof = Array.length terminals - 1

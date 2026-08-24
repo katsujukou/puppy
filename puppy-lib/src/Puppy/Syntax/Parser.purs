@@ -21,7 +21,8 @@ import Data.Either (Either(..))
 import Data.Foldable (traverse_)
 import Data.List (List(..), (:))
 import Data.List as List
-import Data.Maybe (Maybe(..), maybe)
+import Data.Maybe (Maybe(..), isJust, maybe)
+import Data.Traversable (traverse)
 import Puppy.Syntax
   ( Associativity(..)
   , Code
@@ -35,6 +36,7 @@ import Puppy.Syntax
   , StartDecl
   , SymbolRef(..)
   , TokenDecl
+  , TokenPattern
   , TokenSource(..)
   , TypeDecl
   , DeriveDecl
@@ -183,19 +185,31 @@ optionalType :: Parser (Maybe Code)
 optionalType = do
   t <- current
   case t.token of
-    TBraced code -> advance $> Just code
+    TBraced braced -> advance $> Just braced.code
     _ -> pure Nothing
 
 requiredType :: String -> Parser Code
 requiredType what = do
   t <- current
   case t.token of
-    TBraced code -> advance $> code
+    TBraced braced -> advance $> braced.code
     _ -> fatal
       ( "expected a `{ ... }` type annotation after " <> what <> ", found "
           <> describe t.token
       )
       t.span
+
+-- | A `{ ... }` in a position where a token pattern may or may not appear.
+-- |
+-- | The placeholders come from the lexer, which knew a `$$` in code from one
+-- | inside a string. Nothing looks at this text again.
+optionalPattern :: Parser (Maybe TokenPattern)
+optionalPattern = do
+  t <- current
+  case t.token of
+    TBraced braced ->
+      advance $> Just { code: braced.code, holes: braced.placeholders }
+    _ -> pure Nothing
 
 -- | The end-of-input terminal belongs to Puppy, not to the grammar. Every
 -- | position where a grammar can name a symbol has to say so, or the promise
@@ -218,8 +232,18 @@ checkNoneReserved role = traverse_ \n -> checkNotReserved n.name n.span role
 -- Declarations
 --------------------------------------------------------------------------------
 
+-- | A `%token` before the grammar's mode is known.
+-- |
+-- | Whether a pattern belongs here cannot be decided while reading, because
+-- | `%tokentype` may not have been read yet: declarations are in any order.
+type PendingToken =
+  { decl :: TokenDecl
+  , pattern :: Maybe TokenPattern
+  }
+
 type Decls =
-  { tokens :: List TokenDecl
+  { tokenType :: Maybe Code
+  , tokens :: List PendingToken
   , starts :: List StartDecl
   , types :: List TypeDecl
   , derives :: List DeriveDecl
@@ -228,7 +252,13 @@ type Decls =
 
 emptyDecls :: Decls
 emptyDecls =
-  { tokens: Nil, starts: Nil, types: Nil, precedences: Nil, derives: Nil }
+  { tokenType: Nothing
+  , tokens: Nil
+  , starts: Nil
+  , types: Nil
+  , precedences: Nil
+  , derives: Nil
+  }
 
 declarations :: Decls -> Parser Decls
 declarations = repeatedly step
@@ -239,6 +269,8 @@ declarations = repeatedly step
       TSeparator -> pure Nothing
       TEnd -> fatal "expected `%%` before the end of the file" t.span
       TKeyword "token" -> advance *> map Just (tokenDecls acc)
+      TKeyword "tokentype" ->
+        advance *> map Just (tokenTypeDecl t.span acc)
       TKeyword "start" -> advance *> map Just (startDecls acc)
       TKeyword "type" -> advance *> map Just (typeDecls acc)
       TKeyword "derive" -> advance *> map Just (deriveDecls acc)
@@ -252,7 +284,15 @@ declarations = repeatedly step
         ("unexpected " <> describe t.token <> " in the declaration section")
         t.span
 
--- | `%token { Payload }? (NAME "display"?)+`
+-- | `%tokentype { Type }`
+tokenTypeDecl :: Span -> Decls -> Parser Decls
+tokenTypeDecl span acc = do
+  ty <- requiredType "`%tokentype`"
+  when (isJust acc.tokenType) do
+    fatal "`%tokentype` is declared more than once" span
+  pure acc { tokenType = Just ty }
+
+-- | `%token { Payload }? (NAME "display"? { Pattern }?)+`
 tokenDecls :: Decls -> Parser Decls
 tokenDecls acc = do
   payload <- optionalType
@@ -266,11 +306,14 @@ tokenDecls acc = do
         advance
         checkNotReserved name t.span "declared"
         display <- displayName name
+        pattern <- optionalPattern
         pure
           ( Just read
               { found =
-                  { name, constructor: name, display, payload, span: t.span }
-                    : read.found
+                  { decl:
+                      { name, constructor: name, display, payload, span: t.span }
+                  , pattern
+                  } : read.found
               , first = false
               }
           )
@@ -429,12 +472,12 @@ production = do
   precedence <- precedenceOverride
   t <- current
   case t.token of
-    TBraced action -> do
+    TBraced braced -> do
       advance
       pure
         { elements
         , precedence
-        , action
+        , action: braced.code
         , span: { start: start.span.start, end: t.span.end }
         }
     _ -> fatal
@@ -500,6 +543,34 @@ symbolRef = do
 -- Entry points
 --------------------------------------------------------------------------------
 
+-- | Which mode the grammar is in, settled once every declaration has been read.
+-- |
+-- | Deciding here rather than while reading is what lets `%tokentype` sit
+-- | anywhere among the declarations, like every other one. It is also the last
+-- | moment at which the mode can be made structural: after this, a generated
+-- | token has no pattern and an external one has nothing else.
+tokenSource :: Maybe Code -> Array PendingToken -> Parser TokenSource
+tokenSource declared pending = case declared of
+  Nothing -> case Array.find (isJust <<< _.pattern) pending of
+    Nothing -> pure (GeneratedTokens (map _.decl pending))
+    Just stray -> fatal
+      ( "token `" <> stray.decl.name
+          <> "` is given a pattern, but the grammar has no `%tokentype`; a pattern says how to recognise a value of a token type Puppy did not write"
+      )
+      (maybe stray.decl.span _.code.span stray.pattern)
+
+  Just tokenType -> do
+    tokens <- traverse withPattern pending
+    pure (ExternalTokens { tokenType, tokens })
+  where
+  withPattern p = case p.pattern of
+    Just pattern -> pure { decl: p.decl, pattern }
+    Nothing -> fatal
+      ( "token `" <> p.decl.name
+          <> "` needs a `{ ... }` pattern; with `%tokentype` the grammar says how each terminal is recognised, because Puppy is not writing the constructors"
+      )
+      p.decl.span
+
 grammar :: Parser Grammar
 grammar = do
   header <- optionalHeader
@@ -507,9 +578,11 @@ grammar = do
   expect TSeparator "`%%` between the declarations and the rules"
   rs <- rules Nil
   expect TEnd "end of file"
+  tokens <- tokenSource decls.tokenType
+    (Array.fromFoldable (List.reverse decls.tokens))
   pure
     { header
-    , tokens: GeneratedTokens (Array.fromFoldable (List.reverse decls.tokens))
+    , tokens
     , starts: Array.fromFoldable (List.reverse decls.starts)
     , types: Array.fromFoldable (List.reverse decls.types)
     , precedences: Array.fromFoldable (List.reverse decls.precedences)

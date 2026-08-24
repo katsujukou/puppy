@@ -132,6 +132,37 @@ generatedIn moduleName source = case Parser.parse source of
           , table: tabulate g automaton
           }
 
+-- | The same, over a token type the grammar only refers to.
+-- |
+-- | Two of these patterns are the interesting shapes for a mapping: one with
+-- | code after the hole on the same line, and one spread over several lines
+-- | with the hole part way down.
+externalGrammar :: String
+externalGrammar =
+  """
+%{
+import Language.Token as T
+%}
+
+%tokentype { T.Token }
+
+%token PLUS { T.At _ T.Plus }
+%token { Int } INT "an integer" { T.At _ (T.Number $$) }
+%token { String } NAME "a name"
+  { T.At _
+      (T.Ident $$)
+  }
+
+%start { Int } total
+
+%%
+
+total:
+  | i = INT                  { i }
+  | n = NAME                 { 0 }
+  | a = total PLUS b = INT   { a + b }
+"""
+
 withGenerated
   :: (String -> Array SourceMapping -> Aff Unit) -> Aff Unit
 withGenerated k = case generated grammar of
@@ -153,8 +184,15 @@ startsWith prefix text = SCU.take (SCU.length prefix) text == prefix
 -- | The first line begins at the recorded column. Every line after it begins at
 -- | the recorded indent, with whatever leading space it had in the grammar
 -- | still in front of it -- which is what makes the layout survive the move.
-misplacedLines :: String -> SourceMapping -> Array String
-misplacedLines source m = Array.mapMaybe check (Array.mapWithIndex Tuple fragment)
+-- |
+-- | Only a verbatim mapping says the generated text is the source text. What
+-- | Puppy wrote in place of a `$$` says the opposite, and is checked by
+-- | `uncoveredHoles` instead.
+misplacedLines :: String -> String -> SourceMapping -> Array String
+misplacedLines grammar source m
+  | not m.verbatim = []
+misplacedLines grammar source m =
+  Array.mapMaybe check (Array.mapWithIndex Tuple fragment)
   where
   fragment = split (P.Pattern "\n")
     ( SCU.take (m.source.end.offset - m.source.start.offset)
@@ -178,9 +216,20 @@ misplacedLines source m = Array.mapMaybe check (Array.mapWithIndex Tuple fragmen
             <> show found
         )
 
+-- | Where every `$$` in a grammar is.
+-- |
+-- | A plain search, which is only right because these grammars are written not
+-- | to need anything cleverer: no `$$` of theirs hides in a string or a
+-- | comment. Telling those apart is the lexer's job and is tested there.
+placeholderOffsets :: String -> Array Int
+placeholderOffsets text = Array.filter isHole
+  (Array.range 0 (SCU.length text - 2))
+  where
+  isHole i = SCU.take 2 (SCU.drop i text) == "$$"
+
 -- | The line the fragment should have ended on.
-badEnd :: SourceMapping -> Boolean
-badEnd m = m.generated.end.line /= m.generated.start.line + newlines
+badEnd :: String -> SourceMapping -> Boolean
+badEnd grammar m = m.generated.end.line /= m.generated.start.line + newlines
   where
   newlines =
     Array.length
@@ -207,12 +256,78 @@ spec = describe "Puppy.Codegen" do
   it "points every line of every fragment at the text it came from" do
     withGenerated \source ms -> do
       (Array.length ms > 0) `shouldEqual` true
-      case Array.head (Array.concatMap (misplacedLines source) ms) of
+      case Array.head (Array.concatMap (misplacedLines grammar source) ms) of
         Nothing -> pure unit
         Just problem -> fail problem
 
   it "records where each fragment ends, not only where it starts" do
-    withGenerated \_ ms -> Array.length (Array.filter badEnd ms) `shouldEqual` 0
+    withGenerated \_ ms ->
+      Array.length (Array.filter (badEnd grammar) ms) `shouldEqual` 0
+
+  -- A pattern comes out with something else where its `$$` was, so everything
+  -- after the hole sits at a different column from the one it was written at.
+  -- Each stretch around a hole is recorded on its own; one mapping for the
+  -- whole pattern would point ten columns wide of the mark.
+  it "points at every stretch of a token pattern, on both sides of a hole" do
+    case generated externalGrammar of
+      Left message -> fail ("failed to generate: " <> message)
+      Right out -> do
+        (Array.length out.mappings > 0) `shouldEqual` true
+        case
+          Array.head
+            ( Array.concatMap (misplacedLines externalGrammar out.source)
+                out.mappings
+            )
+          of
+          Nothing -> pure unit
+          Just problem -> fail problem
+        Array.length (Array.filter (badEnd externalGrammar) out.mappings)
+          `shouldEqual` 0
+
+  -- A compiler complaining about the `puppyPayload` Puppy put in has to have
+  -- somewhere to point, and the stretches either side of a hole cover the
+  -- author's text rather than the hole. Each placeholder is written twice --
+  -- once into `terminalIndex` and once into `terminalValue` -- so each should
+  -- be claimed twice.
+  it "covers each placeholder with a mapping of its own" do
+    case generated externalGrammar of
+      Left message -> fail ("failed to generate: " <> message)
+      Right out -> do
+        let
+          holes = placeholderOffsets externalGrammar
+          claimed = map (_.source.start.offset)
+            (Array.filter (not <<< _.verbatim) out.mappings)
+        (Array.length holes > 0) `shouldEqual` true
+        Array.sort claimed `shouldEqual` Array.sort (holes <> holes)
+
+  -- The patterns have to end up in one `case`, because that is the only thing
+  -- that checks them against one another: a pattern the ones above it already
+  -- cover is an unreachable arm, and the compiler says so. Pattern guards would
+  -- classify the tokens just as well and say nothing, which is why the
+  -- generated code carries a discriminant it always passes as `true` -- that is
+  -- what keeps the last arm from being provably dead without switching to
+  -- guards.
+  it "puts the patterns in one case, so the compiler still checks them" do
+    case generated externalGrammar of
+      Left message -> fail ("failed to generate: " <> message)
+      Right out -> do
+        mentions out.source "puppyIndexOf :: Boolean -> Puppy.Deps.Maybe"
+        mentions out.source "puppyIndexOf = case _, _ of"
+        mentions out.source "terminalIndex = puppyIndexOf true"
+        mentions out.source "puppyValueOf = case _, _ of"
+        mentions out.source "terminalValue = puppyValueOf true"
+        notMentions out.source "<- puppyToken"
+
+  it "writes the author's own type where the token type goes" do
+    case generated externalGrammar of
+      Left message -> fail ("failed to generate: " <> message)
+      Right out -> do
+        mentions out.source "total :: Array (T.Token)"
+        mentions out.source "Puppy.Deps.Just (T.At _ (T.Number puppyPayload))"
+        mentions out.source "Puppy.Deps.Just (T.At _ (T.Number _))"
+        -- Nothing of Puppy's own is declared for it, and nothing is exported.
+        notMentions out.source "data Token"
+        notMentions out.source "Token(..)"
 
   it "escapes what cannot be written into a string literal" do
     case generated "%token A \"two\nlines\"\n%start { Int } t\n%%\nt: | A { 0 }\n" of
@@ -292,3 +407,7 @@ spec = describe "Puppy.Codegen" do
   mentions source needle =
     when (not (contains (Pattern needle) source)) do
       fail ("expected the generated module to mention " <> show needle)
+
+  notMentions source needle =
+    when (contains (Pattern needle) source) do
+      fail ("expected the generated module not to mention " <> show needle)

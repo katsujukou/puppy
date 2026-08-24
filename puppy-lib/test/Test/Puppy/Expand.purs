@@ -433,9 +433,74 @@ main: | x = loop { x }
   -- A grammar's names do not all end up in the same place, and each place has
   -- its own rules. Accepting one that breaks them means reporting the problem
   -- later, against generated code nobody wrote.
+  -- A token type the grammar refers to rather than one Puppy writes. What can
+  -- be checked here is narrow on purpose: a pattern is PureScript and belongs
+  -- to the compiler, but where the payload sits, and whether two patterns are
+  -- the same text, are Puppy's own business.
+  describe "an external token type" do
+    it "accepts a pattern for every token" do
+      productionsOf
+        ( "%tokentype { T.Token }\n%token A { T.A }\n%token { Int } B { T.B $$ }\n"
+            <> "%start { X } main\n%%\nmain: | A x = B { x }\n"
+        )
+        `shouldEqual` Right [ "main -> A B" ]
+
+    it "rejects a token with no pattern" do
+      shouldFailWith "needs a `{ ... }` pattern"
+        "%tokentype { T.Token }\n%token A { T.A }\n%token B\n%start { X } main\n%%\nmain: | A B { 1 }\n"
+
+    it "rejects a pattern where there is no external type" do
+      shouldFailWith "has no `%tokentype`"
+        "%token A { T.A }\n%start { X } main\n%%\nmain: | A { 1 }\n"
+
+    it "rejects a second %tokentype" do
+      shouldFailWith "declared more than once"
+        "%tokentype { T.Token }\n%tokentype { U.Token }\n%token A { T.A }\n%start { X } main\n%%\nmain: | A { 1 }\n"
+
+    it "rejects a placeholder in a token that carries nothing" do
+      shouldFailWith "nothing for `$$` to stand for"
+        "%tokentype { T.Token }\n%token A { T.A $$ }\n%start { X } main\n%%\nmain: | A { 1 }\n"
+
+    it "rejects a token that carries something and says nowhere to find it" do
+      shouldFailWith "needs a `$$`"
+        "%tokentype { T.Token }\n%token { Int } A { T.A }\n%start { X } main\n%%\nmain: | x = A { x }\n"
+
+    it "rejects a pattern with more than one placeholder" do
+      shouldFailWith "has 2 `$$` placeholders"
+        "%tokentype { T.Token }\n%token { Int } A { T.A $$ $$ }\n%start { X } main\n%%\nmain: | x = A { x }\n"
+
+    -- Spacing is not what tells two patterns apart.
+    it "rejects two tokens with the same pattern" do
+      shouldFailWith "has the same pattern as"
+        "%tokentype { T.Token }\n%token A { T.A }\n%token B {  T.A  }\n%start { X } main\n%%\nmain: | A B { 1 }\n"
+
+    -- The space inside a string literal is part of the pattern rather than
+    -- spacing around it, so these two are as different as patterns get.
+    it "does not mistake two patterns that differ inside a string" do
+      productionsOf
+        ( "%tokentype { T.Token }\n%token A { T.Text \"a b\" }\n"
+            <> "%token B { T.Text \"ab\" }\n%start { X } main\n%%\nmain: | A B { 1 }\n"
+        )
+        `shouldEqual` Right [ "main -> A B" ]
+
+    it "rejects %derive, which has nothing here to put an instance on" do
+      shouldFailWith "cannot be derived here"
+        "%tokentype { T.Token }\n%derive Eq\n%token A { T.A }\n%start { X } main\n%%\nmain: | A { 1 }\n"
+
+    -- Upper case is Puppy's rule about grammars, not PureScript's about
+    -- constructors, so an external type does not lift it.
+    it "still wants a token name in upper case" do
+      shouldFailWith "must begin with an upper-case letter"
+        "%tokentype { T.Token }\n%token a { T.A }\n%start { X } main\n%%\nmain: | a { 1 }\n"
+
+    it "does not mind a %tokentype written after the tokens" do
+      productionsOf
+        "%token A { T.A }\n%tokentype { T.Token }\n%start { X } main\n%%\nmain: | A { 1 }\n"
+        `shouldEqual` Right [ "main -> A" ]
+
   describe "names that have to survive into PureScript" do
-    it "rejects a token name that cannot be a constructor" do
-      shouldFailWith "begin with a capital letter"
+    it "rejects a token name that does not begin in upper case" do
+      shouldFailWith "must begin with an upper-case letter"
         "%token plus\n%start { X } main\n%%\nmain: | plus { 1 }\n"
 
     it "rejects a start symbol that cannot be a value" do

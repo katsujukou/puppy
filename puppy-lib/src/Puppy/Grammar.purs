@@ -30,7 +30,7 @@ import Puppy.Syntax
   , PrecedenceDecl
   , Span
   , StartDecl
-  , TokenDecl
+  , TokenSource
   , TypeDecl
   )
 
@@ -102,7 +102,10 @@ type Production =
 
 type Grammar =
   { header :: Maybe Code
-  , terminals :: Array TokenDecl
+  , tokens :: TokenSource
+  -- ^ Whether the token type is generated or the author's own, and what is
+  -- known about each terminal either way. `Syntax.declaredTokens` is what
+  -- anything that only wants the terminals should reach for.
   , precedences :: Array PrecedenceDecl
   , types :: Array TypeDecl
   , derives :: Array DeriveDecl

@@ -19,8 +19,21 @@ braced source = case lex source of
   Right toks -> Right (Array.mapMaybe pick toks)
   where
   pick t = case t.token of
-    TBraced code -> Just code.text
+    TBraced b -> Just b.code.text
     _ -> Nothing
+
+-- | The column each `$$` placeholder was found at, over every `{ ... }` block.
+-- |
+-- | A column rather than a count, because the interesting mistakes are as much
+-- | about finding one in the wrong place as about finding the wrong number.
+holes :: String -> Either String (Array Int)
+holes source = case lex source of
+  Left err -> Left err.message
+  Right toks -> Right (Array.concatMap pick toks)
+  where
+  pick t = case t.token of
+    TBraced b -> map (_.start.column) b.placeholders
+    _ -> []
 
 spec :: Spec Unit
 spec = describe "Puppy.Syntax.Lexer" do
@@ -95,6 +108,47 @@ spec = describe "Puppy.Syntax.Lexer" do
 
     it "no longer accepts the angle-bracketed spelling" do
       braced "%token <Int> INT" `shouldEqual` Left "unexpected character '<'"
+
+  describe "token pattern placeholders" do
+    it "finds one written on its own" do
+      holes "{ $$ }" `shouldEqual` Right [ 3 ]
+
+    it "finds one inside a nested pattern" do
+      holes "{ T.At _ (T.Number $$) }" `shouldEqual` Right [ 20 ]
+
+    it "finds every one there is" do
+      holes "{ P $$ $$ }" `shouldEqual` Right [ 5, 8 ]
+
+    it "finds none where there are none" do
+      holes "{ T.Plus }" `shouldEqual` Right []
+
+    -- The three ways a run of characters can look like a placeholder without
+    -- being one. A scan over the finished text could tell none of them apart.
+    it "does not find one inside a string" do
+      holes """{ T.Str "$$" }""" `shouldEqual` Right []
+
+    it "does not find one inside a triple-quoted string" do
+      holes "{ T.Str \"\"\"$$\"\"\" }" `shouldEqual` Right []
+
+    it "does not find one inside a line comment" do
+      holes "{ P -- $$\n }" `shouldEqual` Right []
+
+    it "does not find one inside a block comment" do
+      holes "{ P {- $$ -} }" `shouldEqual` Right []
+
+    -- PureScript operators are a maximal run of symbol characters, so a
+    -- placeholder is only a placeholder when nothing else is stuck to it.
+    it "does not find one inside a longer operator" do
+      holes "{ a $$$ b }" `shouldEqual` Right []
+
+    it "does not find one at the end of a longer operator" do
+      holes "{ a <$$ b }" `shouldEqual` Right []
+
+    it "does not find one at the start of a longer operator" do
+      holes "{ a $$> b }" `shouldEqual` Right []
+
+    it "does not find one in a run of four" do
+      holes "{ a $$$$ b }" `shouldEqual` Right []
 
   describe "grammar syntax" do
     it "skips line and nested block comments between declarations" do

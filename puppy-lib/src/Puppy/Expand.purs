@@ -34,7 +34,7 @@ import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe, maybe)
 import Data.Set (Set)
 import Data.Set as Set
-import Data.String.Common (joinWith)
+import Data.String.Common (joinWith, trim)
 import Data.Traversable (traverse)
 import Data.Tuple (Tuple(..))
 import Puppy.Grammar (Action(..), Bound(..), Production, Symbol(..))
@@ -103,8 +103,7 @@ type Env =
   }
 
 tokensOf :: Syntax.Grammar -> Array Syntax.TokenDecl
-tokensOf syn = case syn.tokens of
-  Syntax.GeneratedTokens decls -> decls
+tokensOf syn = Syntax.declaredTokens syn.tokens
 
 -- | Building this cannot fail. Anything wrong with the names it collects is
 -- | reported by `validate`, which runs before any of it is used.
@@ -164,6 +163,9 @@ validate syn = Array.concat
   , Array.concatMap badTokenName (tokensOf syn)
   , Array.concatMap badStartName syn.starts
   , entryPointClashes
+  , externalDeriveErrors
+  , placeholderErrors
+  , duplicatePatternErrors
   , Array.concatMap unknownDerive syn.derives
   , duplicateErrors
       (\n -> "`" <> n <> "` is derived more than once")
@@ -200,11 +202,15 @@ validate syn = Array.concat
         ]
 
   -- A token name becomes a data constructor, so it has to look like one.
+  -- Upper case in both modes. Where Puppy writes the token type this is
+  -- PureScript's rule for a constructor; where it does not, it is Puppy's own,
+  -- and worth keeping -- it is what tells a terminal from a rule at a glance in
+  -- a production, and an external token type costs nothing to name this way.
   badTokenName decl
     | Names.isConstructor decl.name = []
     | otherwise =
         [ { message: "token `" <> decl.name
-              <> "` cannot be a PureScript constructor; a token name has to begin with a capital letter"
+              <> "` must begin with an upper-case letter; that is how a grammar tells a terminal from a rule"
           , span: decl.span
           }
         ]
@@ -254,6 +260,78 @@ validate syn = Array.concat
           <> "`; each start symbol produces one of its own name and one with `From` appended"
       , span: s.span
       }
+
+  externalTokens = case syn.tokens of
+    Syntax.GeneratedTokens _ -> []
+    Syntax.ExternalTokens spec -> spec.tokens
+
+  isExternal = case syn.tokens of
+    Syntax.GeneratedTokens _ -> false
+    Syntax.ExternalTokens _ -> true
+
+  -- An instance has to live in the module its type does, and with
+  -- `%tokentype` that module is not this one.
+  externalDeriveErrors
+    | isExternal = map
+        ( \d ->
+            { message: "`" <> d.name
+                <> "` cannot be derived here: with `%tokentype` the token type is yours, and an instance belongs in the module its type was declared in"
+            , span: d.span
+            }
+        )
+        syn.derives
+    | otherwise = []
+
+  -- `$$` is where the payload sits, so a token that carries one needs exactly
+  -- one, and a token that carries nothing has nowhere to put it.
+  placeholderErrors = Array.concatMap holes externalTokens
+    where
+    holes t = case t.decl.payload, Array.length t.pattern.holes of
+      Nothing, 0 -> []
+      Nothing, _ ->
+        [ { message: "token `" <> t.decl.name
+              <> "` carries no value, so there is nothing for `$$` to stand for; give it a `{ ... }` payload type or take the placeholder out"
+          , span: t.pattern.code.span
+          }
+        ]
+      Just _, 1 -> []
+      Just _, 0 ->
+        [ { message: "token `" <> t.decl.name
+              <> "` carries a value, so its pattern needs a `$$` to say where in the token that value sits"
+          , span: t.pattern.code.span
+          }
+        ]
+      Just _, n ->
+        [ { message: "token `" <> t.decl.name <> "` has " <> show n
+              <> " `$$` placeholders; a token carries one value, so exactly one of them can be it"
+          , span: t.pattern.code.span
+          }
+        ]
+
+  -- Two patterns that are the same text, once the space a `{ ... }` leaves
+  -- around them is gone, are the same pattern, and the second can never match.
+  --
+  -- Trimming is as far as this goes, and deliberately. Squeezing the space out
+  -- of the middle as well would call `T.Text "a b"` and `T.Text "ab"` the same
+  -- pattern, which they are not, and rejecting a grammar that is fine is worse
+  -- than missing a duplicate the compiler will report as an unreachable arm.
+  -- Everything subtler -- one pattern covering another -- is a question about
+  -- PureScript patterns that Puppy is in no position to answer.
+  duplicatePatternErrors =
+    _.errors (Array.foldl claim { seen: Map.empty, errors: [] } externalTokens)
+    where
+    claim acc t = case Map.lookup (squashed t) acc.seen of
+      Just owner -> acc { errors = Array.snoc acc.errors (clash t owner) }
+      Nothing -> acc { seen = Map.insert (squashed t) t.decl.name acc.seen }
+
+    clash t owner =
+      { message: "token `" <> t.decl.name <> "` has the same pattern as `"
+          <> owner
+          <> "`; the first of two identical patterns takes everything that matches and the second is never reached"
+      , span: t.pattern.code.span
+      }
+
+    squashed t = trim t.pattern.code.text
 
   -- Only the classes whose demands on a payload type can be stated. A token
   -- may carry something with no `Eq` at all, which is why these are asked for
@@ -799,7 +877,7 @@ build syn = do
   productions <- runInline generated.inlines generated.productions
   pure
     { header: syn.header
-    , terminals: tokensOf syn
+    , tokens: syn.tokens
     , precedences: syn.precedences
     , types: syn.types
     , derives: syn.derives

@@ -15,7 +15,7 @@ import Puppy.Syntax
   , Rule
   , SymbolRef(..)
   , TokenDecl
-  , TokenSource(..)
+  , declaredTokens
   )
 import Puppy.Syntax.Lexer (LexToken(..), Located)
 import Puppy.Syntax.Lexer as Lexer
@@ -88,8 +88,7 @@ withSource source k = case parse source of
   Right g -> k g
 
 tokenDecls :: Grammar -> Array TokenDecl
-tokenDecls g = case g.tokens of
-  GeneratedTokens decls -> decls
+tokenDecls g = declaredTokens g.tokens
 
 ruleNamed :: String -> Grammar -> Maybe Rule
 ruleNamed name g = Array.find (\r -> r.name == name) g.rules
@@ -311,8 +310,7 @@ spec = describe "Puppy.Syntax.Parser" do
     it "reads thousands of names in one declaration" do
       case parse (manyTokens 8000) of
         Left err -> fail ("failed to parse: " <> err.message)
-        Right g -> case g.tokens of
-          GeneratedTokens decls -> Array.length decls `shouldEqual` 8000
+        Right g -> Array.length (declaredTokens g.tokens) `shouldEqual` 8000
 
     it "reads thousands of alternatives in one rule" do
       case parse (manyAlternatives 8000) of

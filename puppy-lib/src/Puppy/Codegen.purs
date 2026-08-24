@@ -36,6 +36,7 @@ import Puppy.LR.Grammar (LRGrammar, Prod, Sym(..))
 import Puppy.LR.Table (Action(..), Table)
 import Puppy.Names as Names
 import Puppy.Syntax (Code, TokenDecl, eofToken)
+import Puppy.Syntax as Syntax
 
 type Input =
   { moduleName :: String
@@ -62,7 +63,30 @@ declaredTypes input = Map.fromFoldable
   )
 
 tokenDecls :: Input -> Array TokenDecl
-tokenDecls input = input.core.terminals
+tokenDecls input = Syntax.declaredTokens input.core.tokens
+
+-- | How the generated module names the token type.
+-- |
+-- | `Token` when Puppy wrote it, and the author's own type when it did not.
+-- | Parenthesised in that case because it goes where an argument goes and may
+-- | be more than one word.
+tokenRef :: Input -> Emitter -> Emitter
+tokenRef input acc = case input.core.tokens of
+  Syntax.GeneratedTokens _ -> Emit.write "Token" acc
+  Syntax.ExternalTokens spec ->
+    Emit.write "(" acc # writeFragment 2 spec.tokenType # Emit.write ")"
+
+-- | The patterns that pick each terminal out of an external token type, in
+-- | declaration order. Empty when Puppy wrote the type itself.
+tokenPatterns :: Input -> Array Syntax.TokenPattern
+tokenPatterns input = case input.core.tokens of
+  Syntax.GeneratedTokens _ -> []
+  Syntax.ExternalTokens spec -> map _.pattern spec.tokens
+
+external :: Input -> Boolean
+external input = case input.core.tokens of
+  Syntax.GeneratedTokens _ -> false
+  Syntax.ExternalTokens _ -> true
 
 -- | The type a symbol's semantic value has, where the grammar said.
 typeOfSymbol :: Input -> Sym -> Maybe Code
@@ -339,8 +363,10 @@ inlineHelperTable input e = Array.foldl one e (inlineHelpers input)
 -- | the exports, and unlike that, possible. PureScript will not export some of
 -- | a type's constructors and not others.
 tokenType :: Input -> Emitter -> Emitter
+tokenType input e
+  | external input = e
 tokenType input e =
-  Array.foldl constructor (Emit.write "data Token\n" e)
+  Array.foldl constructor (Emit.write "\ndata Token\n" e)
     (Array.mapWithIndex Tuple (tokenDecls input))
     # eqInstance
     # showInstance
@@ -399,10 +425,17 @@ allTokens input = Array.snoc (tokenDecls input)
 
 terminalFunctions :: Input -> Emitter -> Emitter
 terminalFunctions input e =
-  Emit.write "\nterminalIndex :: Puppy.Deps.Maybe Token -> Int\nterminalIndex = case _ of\n" e
-    # flip (Array.foldl indexArm) numbered
-    # Emit.write "\nterminalValue :: Puppy.Deps.Maybe Token -> Puppy.Runtime.Value\nterminalValue = case _ of\n"
-    # flip (Array.foldl valueArm) numbered
+  terminalFunction "terminalIndex" "puppyIndexOf" "Int" "_" indexOf
+    (show (Array.length tokens))
+    indexNote
+    e
+    # terminalFunction "terminalValue" "puppyValueOf" "Puppy.Runtime.Value"
+        "puppyPayload"
+        valueOf
+        ( "Puppy.Runtime.internalError\n" <> spaces 4
+            <> quoted "a value was asked for a token this grammar does not declare"
+        )
+        valueNote
     # Emit.write "\nterminalNames :: Array String\n"
     # Emit.write (arrayBinding "terminalNames" (map (quoted <<< _.display) tokens))
     # Emit.write "\nterminalName :: Int -> String\nterminalName puppyIndex = case Puppy.Deps.index terminalNames puppyIndex of\n"
@@ -414,23 +447,84 @@ terminalFunctions input e =
 
   numbered = Array.mapWithIndex Tuple tokens
 
-  -- The index does not look at a payload, so it must not name it: an unused
-  -- name is a warning, and a caller building with `--strict` would have that
-  -- warning fail their build rather than ours.
-  indexArm acc (Tuple i decl) =
-    Emit.write (line 2 (pattern i decl "_" <> " -> " <> show i)) acc
+  patterns = tokenPatterns input
 
-  valueArm acc (Tuple i decl) = Emit.write
-    ( line 2
-        ( pattern i decl "puppyPayload" <> " -> Puppy.Runtime.box "
-            <> (if isJust decl.payload then "puppyPayload" else "unit")
-        )
-    )
-    acc
+  lastIndex = Array.length tokens - 1
 
-  pattern i decl bound =
-    if i == Array.length tokens - 1 then "Puppy.Deps.Nothing"
-    else if isJust decl.payload then
+  indexOf i _ = show i
+
+  valueOf _ decl = "Puppy.Runtime.box "
+    <> (if isJust decl.payload then "puppyPayload" else "unit")
+
+  -- Where Puppy wrote the token type it knows the constructors, so a `case`
+  -- over them is total and wants no fallback.
+  --
+  -- Where it did not, one is needed for a token the grammar never declared --
+  -- and then the `Boolean` earns its keep. See the note it is emitted with.
+  terminalFunction name helper result bound rhs fallback note acc
+    | external input =
+        Emit.write (helper <> " :: Boolean -> Puppy.Deps.Maybe ")
+          (Emit.write note acc)
+          # tokenRef input
+          # Emit.write
+              (" -> " <> result <> "\n" <> helper <> " = case _, _ of\n")
+          # flip (Array.foldl (arm bound rhs "true, ")) numbered
+          # Emit.write (line 2 ("_, _ -> " <> fallback))
+          # Emit.write ("\n" <> name <> " :: Puppy.Deps.Maybe ")
+          # tokenRef input
+          # Emit.write
+              (" -> " <> result <> "\n" <> name <> " = " <> helper <> " true\n")
+    | otherwise =
+        Emit.write ("\n" <> name <> " :: Puppy.Deps.Maybe ") acc
+          # tokenRef input
+          # Emit.write (" -> " <> result <> "\n" <> name <> " = case _ of\n")
+          # flip (Array.foldl (arm bound rhs "")) numbered
+
+  -- Why generated code classifies a token through a `Boolean` it always passes
+  -- as `true`.
+  --
+  -- The patterns are the author's, and between them they may cover the token
+  -- type -- a grammar and a token type written for one another usually do. A
+  -- `case` whose last arm can be proved unreachable is an error under
+  -- `--strict`, in generated code its reader did not write. Nothing covers
+  -- `false`, so the last arm is always needed.
+  --
+  -- Pattern guards settle that too, and were tried. They settle too much: a
+  -- guard is not something a compiler proves unreachable, so `T.Ident $$`
+  -- written before `T.Ident "if"` would silently take every identifier and
+  -- nothing would say so. This way the arms are still checked against one
+  -- another.
+  indexNote =
+    "\n-- | Which terminal a token is.\n-- |\n"
+      <> "-- | The `Boolean` is always `true`. It is there so that the last arm below\n"
+      <> "-- | cannot be proved unreachable, whatever the patterns above it cover\n"
+      <> "-- | between them -- while leaving those patterns checked against one\n"
+      <> "-- | another, so that a pattern written where a narrower one should have come\n"
+      <> "-- | first is still reported.\n"
+
+  valueNote =
+    "\n-- | The value a token carries, boxed for the parser stack. The `Boolean` is\n"
+      <> "-- | there for the reason given above.\n"
+
+  arm bound rhs prefix acc (Tuple i decl) =
+    Emit.write (spaces 2 <> prefix) acc
+      # match i decl bound
+      # Emit.write (" -> " <> rhs i decl <> "\n")
+
+  -- What stands to the left. In external mode this is the author's own
+  -- pattern, written out with `bound` where the `$$` was; in generated mode
+  -- Puppy knows the constructor because it wrote it.
+  match i decl bound acc
+    | i == lastIndex = Emit.write "Puppy.Deps.Nothing" acc
+    | otherwise = case Array.index patterns i of
+        Just pattern ->
+          Emit.write "Puppy.Deps.Just (" acc
+            # Emit.writePattern 2 bound pattern
+            # Emit.write ")"
+        Nothing -> Emit.write (declared decl bound) acc
+
+  declared decl bound =
+    if isJust decl.payload then
       "Puppy.Deps.Just (" <> decl.constructor <> " " <> bound <> ")"
     else "Puppy.Deps.Just " <> decl.constructor
 
@@ -580,41 +674,98 @@ gotoTable input = Emit.write
     <> " }"
 
 tableBuilder :: Input -> Emitter -> Emitter
-tableBuilder input = Emit.write
-  ( "\ntableFor :: Int -> Puppy.Runtime.Table (Puppy.Deps.Maybe Token) Puppy.Runtime.Value\ntableFor puppyStart =\n"
-      <> line 2 "{ action: actionAt"
-      <> line 2 ", goto: gotoAt"
-      <> line 2 ", production: productionAt"
-      <> line 2 ", semanticAction: semanticActionAt"
-      <> line 2 ", terminalIndex"
-      <> line 2 ", terminalValue"
-      <> line 2 ", terminalName"
-      <> line 2 (", terminalCount: " <> show (Array.length (allTokens input)))
-      <> line 2 ", startState: puppyStart"
-      <> line 2 "}"
-      <> "\n-- | End of input is `Puppy.Deps.Nothing` to the driver and nothing at all to a\n-- | caller, so an error that landed on it reports no token rather than one the\n-- | caller has no way to name.\ntoParseError\n"
-      <> line 2 ":: Puppy.Runtime.ParseError (Puppy.Deps.Maybe Token)"
-      <> line 2 "-> Puppy.Runtime.ParseError Token"
-      <> "toParseError puppyError =\n  puppyError { found = Puppy.Deps.fromMaybe Puppy.Deps.Nothing puppyError.found }\n"
-      <> "\nfromResult\n"
-      <> line 2 ":: forall puppyResult"
-      <> line 3 ". Puppy.Deps.Either (Puppy.Runtime.ParseError (Puppy.Deps.Maybe Token)) Puppy.Runtime.Value"
-      <> line 2 "-> Puppy.Deps.Either (Puppy.Runtime.ParseError Token) puppyResult"
-      <> "fromResult = case _ of\n"
-      <> line 2 "Puppy.Deps.Left puppyError -> Puppy.Deps.Left (toParseError puppyError)"
-      <> line 2 "Puppy.Deps.Right puppyValue -> Puppy.Deps.Right (Puppy.Runtime.unbox puppyValue)"
-      <> "\n-- | Feed the parser from an array, without building a second one.\n-- |\n-- | The driver's token here is `Puppy.Deps.Maybe Token`, and that is exactly\n-- | what a lookup past the end of an array answers, so the same\n-- | `Puppy.Deps.index` both reads a token and says there are no more.\nrunArray\n"
-      <> line 2 ":: Array Token"
-      <> line 2 "-> Int"
-      <> line 2 "-> Puppy.Runtime.Step (Puppy.Deps.Maybe Token) Puppy.Runtime.Value"
-      <> line 2 "-> Puppy.Deps.Either (Puppy.Runtime.ParseError (Puppy.Deps.Maybe Token)) Puppy.Runtime.Value"
-      <> "runArray puppyInput puppyIndex puppyStep = case puppyStep of\n"
-      <> line 2 "Puppy.Runtime.Await puppyResume ->"
-      <> line 4 "runArray puppyInput (puppyIndex + 1)"
-      <> line 6 "(Puppy.Runtime.resume puppyResume (Puppy.Deps.index puppyInput puppyIndex))"
-      <> line 2 "Puppy.Runtime.Done puppyValue -> Puppy.Deps.Right puppyValue"
-      <> line 2 "Puppy.Runtime.Failed puppyError -> Puppy.Deps.Left puppyError"
-  )
+tableBuilder input e =
+  Emit.write "\ntableFor :: Int -> Puppy.Runtime.Table (Puppy.Deps.Maybe " e
+    # tokenRef input
+    # Emit.write ") Puppy.Runtime.Value\ntableFor puppyStart =\n"
+    # Emit.write
+        ( line 2 "{ action: actionAt"
+            <> line 2 ", goto: gotoAt"
+            <> line 2 ", production: productionAt"
+            <> line 2 ", semanticAction: semanticActionAt"
+            <> line 2 ", terminalIndex"
+            <> line 2 ", terminalValue"
+            <> line 2 ", terminalName"
+            <> line 2
+              (", terminalCount: " <> show (Array.length (allTokens input)))
+            <> line 2 ", startState: puppyStart"
+            <> line 2 "}"
+        )
+    # Emit.write
+        ( "\n-- | End of input is `Puppy.Deps.Nothing` to the driver and nothing at all to a\n"
+            <> "-- | caller, so an error that landed on it reports no token rather than one the\n"
+            <> "-- | caller has no way to name.\ntoParseError\n"
+            <> spaces 2
+            <> ":: Puppy.Runtime.ParseError (Puppy.Deps.Maybe "
+        )
+    # tokenRef input
+    # Emit.write (")\n" <> spaces 2 <> "-> Puppy.Runtime.ParseError ")
+    # tokenRef input
+    # Emit.write
+        ( "\ntoParseError puppyError =\n"
+            <> "  puppyError { found = Puppy.Deps.fromMaybe Puppy.Deps.Nothing puppyError.found }\n"
+            <> "\nfromResult\n"
+            <> line 2 ":: forall puppyResult"
+            <> spaces 3
+            <> ". Puppy.Deps.Either (Puppy.Runtime.ParseError (Puppy.Deps.Maybe "
+        )
+    # tokenRef input
+    # Emit.write
+        ( ")) Puppy.Runtime.Value\n"
+            <> spaces 2
+            <> "-> Puppy.Deps.Either (Puppy.Runtime.ParseError "
+        )
+    # tokenRef input
+    # Emit.write
+        ( ") puppyResult\nfromResult = case _ of\n"
+            <> line 2
+              "Puppy.Deps.Left puppyError -> Puppy.Deps.Left (toParseError puppyError)"
+            <> line 2
+              "Puppy.Deps.Right puppyValue -> Puppy.Deps.Right (Puppy.Runtime.unbox puppyValue)"
+            <> runArrayNote
+            <> spaces 2
+            <> ":: Array "
+        )
+    # tokenRef input
+    # Emit.write
+        ( "\n"
+            <> line 2 "-> Int"
+            <> spaces 2
+            <> "-> Puppy.Runtime.Step (Puppy.Deps.Maybe "
+        )
+    # tokenRef input
+    # Emit.write
+        ( ") Puppy.Runtime.Value\n"
+            <> spaces 2
+            <> "-> Puppy.Deps.Either (Puppy.Runtime.ParseError (Puppy.Deps.Maybe "
+        )
+    # tokenRef input
+    # Emit.write
+        ( ")) Puppy.Runtime.Value\n"
+            <> "runArray puppyInput puppyIndex puppyStep = case puppyStep of\n"
+            <> line 2 "Puppy.Runtime.Await puppyResume ->"
+            <> line 4 "runArray puppyInput (puppyIndex + 1)"
+            <> line 6
+              "(Puppy.Runtime.resume puppyResume (Puppy.Deps.index puppyInput puppyIndex))"
+            <> line 2 "Puppy.Runtime.Done puppyValue -> Puppy.Deps.Right puppyValue"
+            <> line 2 "Puppy.Runtime.Failed puppyError -> Puppy.Deps.Left puppyError"
+        )
+  where
+  -- The same point either way; it can only be made by naming the token type
+  -- where there is a name for it.
+  runArrayNote
+    | external input =
+        "\n-- | Feed the parser from an array, without building a second one.\n"
+          <> "-- |\n"
+          <> "-- | The driver reads a `Puppy.Deps.Maybe` of the token type, and that is\n"
+          <> "-- | exactly what a lookup past the end of an array answers, so the same\n"
+          <> "-- | `Puppy.Deps.index` both reads a token and says there are no more.\nrunArray\n"
+    | otherwise =
+        "\n-- | Feed the parser from an array, without building a second one.\n"
+          <> "-- |\n"
+          <> "-- | The driver's token here is `Puppy.Deps.Maybe Token`, and that is exactly\n"
+          <> "-- | what a lookup past the end of an array answers, so the same\n"
+          <> "-- | `Puppy.Deps.index` both reads a token and says there are no more.\nrunArray\n"
 
 -- | The two ways in, for each `%start`.
 -- |
@@ -633,11 +784,11 @@ entryPoints input e = Array.foldl one e
     Nothing -> Emit.write "Puppy.Runtime.Value" acc
 
   one acc (Tuple start state) =
-    Emit.write
-      ( "\n" <> start.name
-          <> " :: Array Token -> Puppy.Deps.Either (Puppy.Runtime.ParseError Token) "
-      )
-      acc
+    Emit.write ("\n" <> start.name <> " :: Array ") acc
+      # tokenRef input
+      # Emit.write " -> Puppy.Deps.Either (Puppy.Runtime.ParseError "
+      # tokenRef input
+      # Emit.write ") "
       # resultType start
       # Emit.write "\n"
       # Emit.write
@@ -652,10 +803,16 @@ entryPoints input e = Array.foldl one e
           ( "\n" <> Names.streamingName start.name <> "\n"
               <> line 2 ":: forall m"
               <> line 3 ". Puppy.Deps.MonadRec m"
-              <> line 2 "=> m (Puppy.Deps.Maybe Token)"
               <> spaces 2
-              <> "-> m (Puppy.Deps.Either (Puppy.Runtime.ParseError Token) "
+              <> "=> m (Puppy.Deps.Maybe "
           )
+      # tokenRef input
+      # Emit.write
+          ( ")\n" <> spaces 2
+              <> "-> m (Puppy.Deps.Either (Puppy.Runtime.ParseError "
+          )
+      # tokenRef input
+      # Emit.write ") "
       # resultType start
       # Emit.write ")\n"
       # Emit.write
@@ -666,6 +823,26 @@ entryPoints input e = Array.foldl one e
                     <> ") puppyNext)"
                 )
           )
+
+-- | What the module exports.
+-- |
+-- | The token type is there only when Puppy wrote it. An external one belongs
+-- | to the module that declared it, and re-exporting someone else's type under
+-- | this module's name would give a reader two ways to say the same thing and
+-- | no reason to prefer either.
+exportList :: Input -> String
+exportList input = case Array.uncons exported of
+  -- A grammar with no start symbol never reaches the generator.
+  Nothing -> ""
+  Just { head, tail } ->
+    line 2 ("( " <> head)
+      <> joinWith "" (map (\name -> line 2 (", " <> name)) tail)
+  where
+  exported =
+    (if external input then [] else [ "Token(..)" ])
+      <> Array.concatMap
+        (\s -> [ s.name, Names.streamingName s.name ])
+        input.grammar.starts
 
 preamble :: Input -> Emitter -> Emitter
 preamble input e =
@@ -679,14 +856,7 @@ preamble input e =
         <> "module "
         <> input.moduleName
         <> "\n"
-        <> line 2 "( Token(..)"
-        <> joinWith ""
-          ( map
-              ( \s -> line 2 (", " <> s.name)
-                  <> line 2 (", " <> Names.streamingName s.name)
-              )
-              input.grammar.starts
-          )
+        <> exportList input
         <> line 2 ") where"
         <> "\nimport Prelude\n\n"
         <> "import Puppy.Runtime as Puppy.Runtime\n"
@@ -718,7 +888,6 @@ generate input =
     let
       e = Emit.empty
         # preamble input
-        # Emit.write "\n"
         # tokenType input
         # terminalFunctions input
         # productionTable input
