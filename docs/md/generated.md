@@ -15,6 +15,16 @@ module Puppy.Fixture.Calculator
 
 A `Token` type, and two functions for each `%start` symbol.
 
+Where the grammar declared [`%tokentype`](grammar.md#tokentype) the token type
+is already yours, and the module exports the entry points alone:
+
+```purescript
+module Language.Parser
+  ( expression
+  , expressionFrom
+  ) where
+```
+
 ## The token type
 
 ```purescript
@@ -34,6 +44,10 @@ type it was declared with. Building these is your job — see
 otherwise. `Show` is always there: without `%derive Show` it names the
 constructor and ignores the payload, which asks nothing of the payload types;
 with it, payloads are printed too.
+
+None of this happens under [`%tokentype`](grammar.md#tokentype). There is no
+generated type and no generated instances; the type is the one you named, and
+everything below reads with your type in place of `Token`.
 
 ## Entry points
 
@@ -176,6 +190,11 @@ shipping a parser does not need Puppy installed.
 Anything your own code uses is on top of this. Pattern matching the `Either` a
 parser returns means depending on `either` — because your code says `Left`, not
 because the generated module does.
+
+The same goes for a token type of your own. Under
+[`%tokentype`](grammar.md#tokentype) the generated module imports it, but the
+module is in your package and whatever it needs is already on your list; these
+two lines are still the whole of what the generated module adds.
 
 ## Lexing
 

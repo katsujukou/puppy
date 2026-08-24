@@ -54,6 +54,11 @@ Then `%%`, and the rules. `i = INT` binds that token's payload for the action
 that follows in braces. The action is PureScript, reproduced exactly, evaluated
 with the binders in scope.
 
+`%token` here declares the token type as well as naming the terminals. If you
+already have one — a lexer written before the grammar, or a type two parsers
+share — [`%tokentype`](grammar.md#tokentype) refers to it instead of writing a
+new one.
+
 ## Generating
 
 Now, let's generate the PureScript parser module from the grammar file we created in the previous section. Puppy automatically detects `.pursy` files in your current project.

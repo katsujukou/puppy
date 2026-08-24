@@ -87,8 +87,115 @@ different ones.
 Without one a token is called by its own name, which is usually right for `INT`
 and rarely right for `PLUS`.
 
+A `{ ... }` *after* a name is a pattern, and belongs to a grammar that declared
+[`%tokentype`](#tokentype); without one there is nothing for a pattern to match
+against and Puppy says so.
+
 `EOF` is not a token and cannot be declared. See
 [end of input](generated.md#end-of-input).
+
+### `%tokentype`
+
+```plain
+%{
+import Language.Token as T
+%}
+
+%tokentype { T.Token }
+
+%token PLUS "+" { T.Plus }
+%token { Int } INT "an integer" { T.IntLiteral $$ }
+```
+
+Optional. Without it, `%token` declares the token type and Puppy writes it.
+With it, the token type is one you already have and Puppy only refers to it:
+the generated module declares no `Token` and exports none.
+
+That is worth having when the type is not the parser's to own — a lexer written
+before the grammar, a token type two parsers share, or one that carries a
+source position on every token.
+
+The type is PureScript, copied verbatim, so what it names has to be in scope
+where it lands: the import belongs in the [header](#the-header).
+
+Every `%token` then needs a pattern, because Puppy no longer knows the
+constructors and cannot guess them from a name that is not theirs.
+
+#### Patterns
+
+A pattern is a PureScript pattern, reproduced exactly, matching the tokens a
+terminal stands for.
+
+```plain
+%token PLUS { T.Plus }
+```
+
+`$$` says where the payload is, and may be anywhere in the pattern, however
+deep:
+
+```plain
+%token { Int } INT { T.IntLiteral $$ }
+%token { Int } INT { T.At _ (T.IntLiteral $$) }
+```
+
+A token declared with a payload type needs exactly one `$$`; one declared
+without needs none. Puppy checks that much and no more: a pattern is PureScript
+and what it means is the compiler's business.
+
+`$$` is not a search and replace over the text. Puppy's lexer finds it while
+reading the pattern, so it knows code from everything that only looks like it:
+
+| written | a placeholder? |
+| --- | --- |
+| `T.Int $$` | yes |
+| `T.Str "$$"` | no — inside a string |
+| `T.Plus {- $$ -}` | no — inside a comment |
+| `a $$$ b` | no — part of a longer operator |
+
+Match what you are not interested in with `_`. A name bound in a pattern is not
+in scope for the semantic actions and nothing else uses it, so binding one earns
+a warning from the PureScript compiler — about generated code, which is not
+where anyone wants to read warnings.
+
+Two patterns that are the same text, once the space around them is gone, are
+rejected here: the second could never match. That is as far as Puppy looks, and
+deliberately — ignoring the space *inside* a pattern would call `T.Text "a b"`
+and `T.Text "ab"` the same, and they are not.
+
+Order matters, because patterns are tried in the order they are declared and the
+first match wins. That is what makes picking keywords out of an identifier
+possible:
+
+```plain
+%token IF "if" { T.Ident "if" }
+%token { String } IDENT "a name" { T.Ident $$ }
+```
+
+That way round is right. The other way round, `IDENT` would take every
+identifier and `IF` would never match — and you would be told: the generated
+code puts these patterns in one `case`, where a pattern the ones above it
+already cover is an unreachable arm, which the PureScript compiler reports as a
+warning and `--strict` turns into an error.
+
+#### A token the grammar never declared
+
+An external token type may well have constructors the grammar says nothing
+about — comments, whitespace, whatever else a lexer produces that a parser has
+no use for.
+
+Handing one to a parser is an ordinary syntax error, reported with that token
+in `found`. It is not a crash, and it is not quietly skipped: a parser that
+should ignore comments wants a lexer that does not produce them.
+
+#### What else changes
+
+- The generated module exports its entry points and nothing else — see [the
+  generated module](generated.md#what-it-exports).
+- `%derive` is not available. An instance has to live in the module its type
+  does, and that module is yours.
+- Token names are still upper case. They are grammar names rather than
+  constructors now, and nothing says they have to match: `%token PLUS
+  { T.TokPlus }` is perfectly ordinary.
 
 ### `%start`
 
@@ -159,7 +266,9 @@ are printed too, and they need `Show` of their own.
 
 An instance has to live in the module its type does, so neither of these can be
 added by a caller afterwards. That is why `%derive` exists rather than being
-left to whoever needs it.
+left to whoever needs it -- and why it is available only where Puppy writes the
+token type. With [`%tokentype`](#tokentype) that module is yours, and so are the
+instances.
 
 ## Rules
 
@@ -279,7 +388,7 @@ A grammar's names end up in different places, and each place has its own rules.
 
 | Where it came from | What it becomes | Must be |
 | --- | --- | --- |
-| `%token` name | a data constructor | upper case first |
+| `%token` name | a data constructor, where Puppy writes the type | upper case first |
 | `%start` symbol | two exported functions | lower case first, not a name the generated code uses, not one another start symbol also produces |
 | binder | a `let` binding | lower case first, not a reserved word |
 
