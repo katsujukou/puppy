@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import {
   closeSync,
+  readSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -21,6 +22,19 @@ export const readTextImpl = (failed) => (ok) => (path) => () => {
     return ok(readFileSync(path, "utf8"));
   } catch (e) {
     return failed(problem(path, e));
+  }
+};
+
+// The same, for a file that need not be there.
+//
+// `ENOENT` is the ordinary answer: nothing has been written here yet.
+// Everything else is a failure -- a file that exists and cannot be read is not
+// a file to overwrite on the assumption that it does not matter.
+export const readIfPresentImpl = (failed) => (missing) => (ok) => (path) => () => {
+  try {
+    return ok(readFileSync(path, "utf8"));
+  } catch (e) {
+    return e.code === "ENOENT" ? missing : failed(problem(path, e));
   }
 };
 
@@ -158,4 +172,53 @@ export const relativeImpl = (path) => () => {
   const here = relative(process.cwd(), path);
   if (here === "") return ".";
   return here.startsWith("..") ? path : here;
+};
+
+// A yes-or-no question, put to whoever is running the tool.
+//
+// Only asked when standard input is a terminal. In a build script, a CI job or
+// a git hook there is nobody there, and a tool that waits for an answer waits
+// until it is killed -- so it says there was nobody to ask and lets the caller
+// decide what that means.
+//
+// The question goes to standard error: standard output is the list of modules
+// written, and something may be reading it.
+//
+// Read a byte at a time rather than through `readline`, which has no
+// synchronous form.
+//
+// `EAGAIN` means the terminal is in non-blocking mode, which some shells leave
+// behind; there is nothing for it but to ask again. Asking again immediately
+// would spin a core flat for as long as the person takes to answer, so the wait
+// is a real one: `Atomics.wait` blocks this thread without running anything,
+// which is the only way to sleep without an event loop to come back to.
+const idle = new Int32Array(new SharedArrayBuffer(4));
+
+export const confirmImpl = (no) => (yes) => (noOneToAsk) => (question) => () => {
+  if (!process.stdin.isTTY) return noOneToAsk;
+
+  process.stderr.write(question);
+
+  const byte = Buffer.alloc(1);
+  let answer = "";
+  for (;;) {
+    let read;
+    try {
+      read = readSync(0, byte, 0, 1, null);
+    } catch (e) {
+      if (e.code === "EAGAIN") {
+        Atomics.wait(idle, 0, 0, 20);
+        continue;
+      }
+      if (e.code === "EOF") break;
+      return noOneToAsk;
+    }
+    if (read === 0) break;
+    const character = byte.toString("utf8");
+    if (character === "\n") break;
+    answer += character;
+  }
+
+  const said = answer.trim().toLowerCase();
+  return said === "y" || said === "yes" ? yes : no;
 };

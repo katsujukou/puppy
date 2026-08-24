@@ -14,6 +14,7 @@ module Puppy.CLI.Effect.Filesystem
   , _fs
   , interpret
   , readText
+  , readIfPresent
   , writeText
   , readDir
   , isDirectory
@@ -45,6 +46,11 @@ describe e = Fmt.fmt @"{path}: {reason}" { path: e.path, reason: e.reason }
 
 data FilesystemF a
   = ReadText String (Either IOError String -> a)
+  -- | The same, for a file that need not be there. `Nothing` is an ordinary
+  -- | answer -- nothing has been generated here yet -- and is what tells that
+  -- | apart from a file that is there and cannot be read, which is a reason to
+  -- | stop rather than to carry on and overwrite it.
+  | ReadIfPresent String (Either IOError (Maybe String) -> a)
   | WriteText String String (Either IOError Unit -> a)
   -- | `Nothing` for a directory that is not there, which is an ordinary answer
   -- | -- a package need not have a `src`. Anything else is a failure.
@@ -73,6 +79,10 @@ interpret handler = Run.interpret (Run.on _fs handler Run.send)
 
 readText :: forall r. String -> Run (FS + r) (Either IOError String)
 readText path = Run.lift _fs (ReadText path identity)
+
+readIfPresent
+  :: forall r. String -> Run (FS + r) (Either IOError (Maybe String))
+readIfPresent path = Run.lift _fs (ReadIfPresent path identity)
 
 writeText :: forall r. String -> String -> Run (FS + r) (Either IOError Unit)
 writeText path contents = Run.lift _fs (WriteText path contents identity)

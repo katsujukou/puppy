@@ -30,6 +30,8 @@ import Puppy.CLI.Effect.Log (LOG, Level(..), LogF(..))
 import Puppy.CLI.Effect.Log as Log
 import Puppy.CLI.Effect.Process (PROC, ProcessF(..))
 import Puppy.CLI.Effect.Process as Proc
+import Puppy.CLI.Effect.Prompt (Answer(..), PROMPT, PromptF(..))
+import Puppy.CLI.Effect.Prompt as Prompt
 import Run (EFFECT, Run, liftEffect, runBaseEffect)
 import Run.Except (EXCEPT)
 import Run.Except as Except
@@ -39,18 +41,22 @@ import Type.Row (type (+))
 -- | whoever ran the tool, not a stack trace.
 runNode
   :: forall a
-   . Run (FS + LOG + PROC + EFFECT + EXCEPT String + ()) a
+   . Run (FS + LOG + PROC + PROMPT + EFFECT + EXCEPT String + ()) a
   -> Effect (Either String a)
 runNode program = program
   # FS.interpret filesystem
   # Log.interpret logger
   # Proc.interpret process
+  # Prompt.interpret prompt
   # Except.runExcept
   # runBaseEffect
 
 filesystem :: forall r. FilesystemF ~> Run (EFFECT + r)
 filesystem = case _ of
   ReadText path k -> k <$> liftEffect (readTextImpl Left Right path)
+  ReadIfPresent path k ->
+    k <$> liftEffect
+      (readIfPresentImpl Left (Right Nothing) (Right <<< Just) path)
   WriteText path contents k ->
     k <$> liftEffect (writeTextImpl Left (Right unit) path contents)
   ReadDir path k ->
@@ -72,6 +78,13 @@ logger = case _ of
       Error -> Console.error message
     pure next
 
+-- | Questions go to standard error, where the rest of what a person is meant
+-- | to read goes; standard output is the list of modules written, which a
+-- | script may well be reading.
+prompt :: forall r. PromptF ~> Run (EFFECT + r)
+prompt = case _ of
+  Confirm question k -> k <$> liftEffect (confirmImpl No Yes NoOneToAsk question)
+
 process :: forall r. ProcessF ~> Run (EFFECT + r)
 process = case _ of
   Capture command args k -> k <$> liftEffect do
@@ -82,6 +95,9 @@ process = case _ of
 
 foreign import readTextImpl
   :: forall a. (IOError -> a) -> (String -> a) -> String -> Effect a
+
+foreign import readIfPresentImpl
+  :: forall a. (IOError -> a) -> a -> (String -> a) -> String -> Effect a
 
 foreign import writeTextImpl
   :: forall a. (IOError -> a) -> a -> String -> String -> Effect a
@@ -100,6 +116,10 @@ foreign import sameFileImpl
   :: forall a. (IOError -> a) -> (Boolean -> a) -> String -> String -> Effect a
 
 foreign import relativeImpl :: String -> Effect String
+
+-- | Put a question and read the answer, or say there was nobody to ask.
+foreign import confirmImpl
+  :: forall a. a -> a -> a -> String -> Effect a
 
 -- | Run a program and return its standard output. Its standard error is left
 -- | alone, so that a tool with something to say still says it.

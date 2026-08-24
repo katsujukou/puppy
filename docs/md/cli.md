@@ -49,6 +49,36 @@ the two are the same file under different names.
 | `-v`, `--version` | |
 | `-h`, `--help` | |
 
+## Writing over what is already there
+
+A generated module says so on its first line, and one that does is Puppy's to
+replace. Anything else at that path is somebody's own work, and Puppy stops
+rather than destroy it:
+
+```plain
+src/Foo/Parser.purs was not written by Puppy. Overwrite it? [y/N]
+```
+
+The usual cause is innocent — a `Parser.pursy` put beside a `Parser.purs` that
+was already there, which is a name collision rather than a decision. Answering
+no leaves the file as it was and fails the run, so nothing downstream carries on
+as though a parser had been generated.
+
+Where there is nobody to ask — a build script, a CI job, a git hook, anything
+whose standard input is not a terminal — nothing is asked and nothing is
+written:
+
+```plain
+puppy: src/Foo/Parser.purs: exists and was not written by Puppy, and there is
+nobody to ask -- standard input is not a terminal. Move it aside, or send the
+module somewhere else.
+```
+
+There is no flag to force it. A generator quietly overwriting a file is the
+thing this exists to prevent, and a flag that turns it off would find its way
+into the build script where the mistake is least visible. Move the file, or
+name a different `--output`.
+
 ## Exit status and output
 
 Zero when every grammar was generated. Non-zero if any failed, and the failures

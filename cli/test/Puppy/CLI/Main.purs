@@ -12,7 +12,7 @@ import Data.Array as Array
 import Data.Map (Map)
 import Data.Map as Map
 import Data.Maybe (Maybe(..), fromMaybe)
-import Data.String (Pattern(..), stripPrefix)
+import Data.String (Pattern(..), contains, stripPrefix)
 import Data.Tuple (Tuple(..), fst)
 import Effect (Effect)
 import Data.Either (Either(..), either, isLeft)
@@ -21,6 +21,9 @@ import Puppy.CLI.Effect.Log (LogF(..))
 import Puppy.CLI.Effect.Log as Log
 import Puppy.CLI.Effect.Process (ProcessF(..))
 import Puppy.CLI.Effect.Process as Proc
+import Puppy.CLI.Effect.Prompt (Answer(..), PromptF(..))
+import Puppy.CLI.Effect.Prompt as Prompt
+import Puppy.Codegen as Codegen
 import Puppy.CLI.Generate (Options)
 import Puppy.CLI.Generate as Generate
 import Puppy.CLI.Effect.Filesystem as FS
@@ -54,6 +57,7 @@ fake unreadable = case _ of
     | otherwise -> pure (k (Right (Map.lookup path tree)))
   IsDirectory path k -> pure (k (Right (Map.member path tree)))
   ReadText path k -> pure (k (Left (refusal path)))
+  ReadIfPresent _ k -> pure (k (Right Nothing))
   WriteText _ _ k -> pure (k (Right unit))
   MkdirP _ k -> pure (k (Right unit))
   Remove _ k -> pure (k (Right unit))
@@ -81,6 +85,7 @@ rooted { refuseDir } = case _ of
   Relative path k ->
     pure (k (fromMaybe path (stripPrefix (Pattern (elsewhere <> "/")) path)))
   ReadText path k -> pure (k (Left (refusal path)))
+  ReadIfPresent _ k -> pure (k (Right Nothing))
   WriteText _ _ k -> pure (k (Right unit))
   MkdirP _ k -> pure (k (Right unit))
   Remove _ k -> pure (k (Right unit))
@@ -132,10 +137,56 @@ recording = case _ of
     pure (k (Right unit))
   MkdirP _ k -> pure (k (Right unit))
   ReadText path k -> pure (k (Left { path, reason: "not here" }))
+  ReadIfPresent _ k -> pure (k (Right Nothing))
   ReadDir _ k -> pure (k (Right Nothing))
   IsDirectory _ k -> pure (k (Right false))
   SameFile a b k -> pure (k (Right (a == b)))
   Relative path k -> pure (k path)
+
+-- | A filesystem with something already where the module is going, and a note
+-- | of everything it was asked to write.
+holding
+  :: forall r
+   . Maybe String
+  -> FilesystemF ~> Run (STATE (Array String) + r)
+holding contents = case _ of
+  ReadIfPresent _ k -> pure (k (Right contents))
+  WriteText path _ k -> do
+    State.modify (flip Array.snoc ("write " <> path))
+    pure (k (Right unit))
+  MkdirP _ k -> pure (k (Right unit))
+  ReadText path k -> pure (k (Left { path, reason: "not here" }))
+  ReadDir _ k -> pure (k (Right Nothing))
+  IsDirectory _ k -> pure (k (Right false))
+  Remove _ k -> pure (k (Right unit))
+  SameFile a b k -> pure (k (Right (a == b)))
+  Relative path k -> pure (k path)
+
+-- | Someone who always gives the same answer, and a note of being asked at all.
+answering :: forall r. Answer -> PromptF ~> Run (STATE (Array String) + r)
+answering answer = case _ of
+  Confirm question k -> do
+    State.modify (flip Array.snoc ("ask " <> question))
+    pure (k answer)
+
+-- | Write a module over whatever is there, with that answer ready.
+writing
+  :: Maybe String
+  -> Answer
+  -> { touched :: Array String, refused :: Maybe String }
+writing contents answer = case run of
+  Tuple touched refused -> { touched, refused }
+  where
+  run = Run.extract
+    ( State.runState []
+        ( FS.interpret (holding contents)
+            ( Log.interpret quiet
+                ( Prompt.interpret (answering answer)
+                    (Generate.write grammar grammar.source "module Foo where\n")
+                )
+            )
+        )
+    )
 
 quiet :: forall r. LogF ~> Run r
 quiet = case _ of
@@ -300,3 +351,60 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "keeps looking for the same packages wherever it was run" do
       map (map _.name) (listed "/elsewhere/again")
         `shouldEqual` Right [ "demo", "tools" ]
+
+    -- A grammar put beside a module somebody wrote by hand is an easy mistake
+    -- to make and an expensive one to make quietly.
+    describe "writing over what is already there" do
+      it "writes where there is nothing, without asking" do
+        let out = writing Nothing No
+        out.touched `shouldEqual` [ "write demo/src/Foo.purs" ]
+        out.refused `shouldEqual` Nothing
+
+      it "replaces a module it wrote before, without asking" do
+        let
+          out = writing
+            (Just (Codegen.marker <> "\nmodule Foo where\n"))
+            No
+        out.touched `shouldEqual` [ "write demo/src/Foo.purs" ]
+        out.refused `shouldEqual` Nothing
+
+      -- The marker is the whole of the first line, not the start of it. A file
+      -- that merely begins with those characters is somebody's own, and this
+      -- is the check standing between it and a generator.
+      it "asks about a file whose first line only begins like ours" do
+        let
+          out = writing
+            (Just (Codegen.marker <> "example\nmodule Foo where\n"))
+            No
+        Array.elem "write demo/src/Foo.purs" out.touched `shouldEqual` false
+        map (contains (Pattern "declined")) out.refused `shouldEqual` Just true
+
+      -- Puppy writes newlines; a checkout can hand them back with a carriage
+      -- return in front, and that is still a file Puppy wrote.
+      it "knows one of ours that came back with CRLF line endings" do
+        let
+          out = writing
+            (Just (Codegen.marker <> "\r\nmodule Foo where\r\n"))
+            No
+        out.touched `shouldEqual` [ "write demo/src/Foo.purs" ]
+        out.refused `shouldEqual` Nothing
+
+      it "asks before writing over anything else" do
+        let out = writing (Just "module Foo where\n") Yes
+        Array.length (Array.filter (contains (Pattern "ask ")) out.touched)
+          `shouldEqual` 1
+        Array.elem "write demo/src/Foo.purs" out.touched `shouldEqual` true
+        out.refused `shouldEqual` Nothing
+
+      it "leaves it alone when told to" do
+        let out = writing (Just "module Foo where\n") No
+        Array.elem "write demo/src/Foo.purs" out.touched `shouldEqual` false
+        map (contains (Pattern "declined")) out.refused `shouldEqual` Just true
+
+      -- A build script or a CI job. Waiting for an answer there waits for ever,
+      -- so nothing is asked and nothing is written.
+      it "leaves it alone when there is nobody to ask" do
+        let out = writing (Just "module Foo where\n") NoOneToAsk
+        Array.elem "write demo/src/Foo.purs" out.touched `shouldEqual` false
+        map (contains (Pattern "not a terminal")) out.refused
+          `shouldEqual` Just true
