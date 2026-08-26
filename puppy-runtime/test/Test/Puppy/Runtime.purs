@@ -4,12 +4,14 @@ import Prelude
 
 import Control.Monad.Error.Class (throwError)
 import Control.Monad.Except.Trans (ExceptT, runExceptT)
+import Control.Monad.Rec.Class as Rec
 import Control.Monad.State (State)
 import Control.Monad.State as State
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..))
+import Data.List (List(..))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Time.Duration (Milliseconds(..))
 import Data.Tuple (Tuple(..))
@@ -18,6 +20,7 @@ import Effect.Class (liftEffect)
 import Effect.Now (now)
 import Partial.Unsafe (unsafeCrashWith)
 import Puppy.Runtime (Action(..), ParseError, Table, parse, parseM)
+import Puppy.Runtime.Source (initial, transduce)
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
 import Test.Spec.Reporter (consoleReporter)
@@ -404,3 +407,89 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       it "is not worked out for a pulled parse that succeeds" do
         let input = Array.snoc (Array.replicate 100 RA) REof
         (pulled (mute rightRecTable) REof input).result `shouldEqual` Right 100
+
+    describe "transducing sources" do
+      it "hands over what a step produced, in order" do
+        (drain expand 0 [ One 1, Skip, Burst 2, One 3 ]).tokens
+          `shouldEqual` [ 1, 2, 2, 2, 3, -4 ]
+
+      it "offers the end of the input to the step, once" do
+        -- Five pulls for four tokens: the fifth is the `Nothing` that lets the
+        -- pass flush, and nothing asks a sixth time.
+        (drain expand 0 [ One 1, Skip, Burst 2, One 3 ]).pulls
+          `shouldEqual` 5
+
+      it "asks again when a step produced nothing" do
+        (drain expand 0 [ Skip, Skip, One 1 ]).tokens
+          `shouldEqual` [ 1, -3 ]
+
+      it "skips a long run of empty steps without running out of stack" do
+        (drain expand 0 (Array.replicate deepPullSize Skip)).tokens
+          `shouldEqual` [ negate deepPullSize ]
+
+      it "is a source a pulling entry point can parse from" do
+        -- `parseM` is the shape a generated `xFrom` has, and the pass here
+        -- produces two tokens for most of the ones it is given. A generated
+        -- entry point takes the `Maybe` as it comes, end of input being
+        -- `Nothing` to its tables; this hand-built one names its own end
+        -- terminal, so the two have to be lined up here.
+        State.evalState
+          ( State.evalStateT
+              (parseM exprTable (fromMaybe TEof <$> transduce infixing counted))
+              (initial false)
+          )
+          { index: 0, pulls: 0, input: [ 1, 2, 3 ] }
+          `shouldEqual` Right 6
+
+--------------------------------------------------------------------------------
+-- Transducing sources
+--------------------------------------------------------------------------------
+
+-- | The three shapes a step can have, in one pass: a token that produces
+-- | nothing, one that produces a token, and one that produces several.
+data Raw = Skip | One Int | Burst Int
+
+-- | Counts what it was given, and says so at the end of the input.
+expand :: Int -> Maybe Raw -> Tuple Int (Array Int)
+expand seen = case _ of
+  Nothing -> Tuple seen [ negate seen ]
+  Just Skip -> Tuple (seen + 1) []
+  Just (One n) -> Tuple (seen + 1) [ n ]
+  Just (Burst n) -> Tuple (seen + 1) [ n, n, n ]
+
+-- | Puts a `+` between the numbers it is given, and ends the input properly.
+infixing :: Boolean -> Maybe Int -> Tuple Boolean (Array Tok)
+infixing started = case _ of
+  Nothing -> Tuple started [ TEof ]
+  Just n
+    | started -> Tuple true [ TPlus, TNum n ]
+    | otherwise -> Tuple true [ TNum n ]
+
+type Reading a = { index :: Int, pulls :: Int, input :: Array a }
+
+-- | The underlying source: one element of the array per pull, counting them.
+counted :: forall a. State (Reading a) (Maybe a)
+counted = do
+  reading <- State.get
+  State.put reading { index = reading.index + 1, pulls = reading.pulls + 1 }
+  pure (Array.index reading.input reading.index)
+
+-- | Everything a transducing source produces, and how often it pulled.
+drain
+  :: forall s raw tok
+   . (s -> Maybe raw -> Tuple s (Array tok))
+  -> s
+  -> Array raw
+  -> { tokens :: Array tok, pulls :: Int }
+drain step transducer input =
+  case State.runState (State.evalStateT (Rec.tailRecM go Nil) (initial transducer)) start' of
+    Tuple collected reading ->
+      { tokens: Array.reverse (Array.fromFoldable collected)
+      , pulls: reading.pulls
+      }
+  where
+  start' = { index: 0, pulls: 0, input }
+
+  go collected = transduce step counted <#> case _ of
+    Nothing -> Rec.Done collected
+    Just token -> Rec.Loop (Cons token collected)

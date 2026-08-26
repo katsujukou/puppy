@@ -8,6 +8,8 @@ package:
     - partial
     - prelude
     - tailrec
+    - transformers
+    - tuples
     - unsafe-coerce
   test:
     main: Test.Puppy.Runtime

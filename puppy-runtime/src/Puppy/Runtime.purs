@@ -18,6 +18,14 @@
 -- | and here they are" a thing you can check rather than a thing to believe.
 -- | [`Puppy.Runtime.Driver`](Puppy.Runtime.Driver.html) is the parser itself,
 -- | and has no unsoundness in it at all.
+-- |
+-- | One module of the package is deliberately not re-exported here.
+-- | [`Puppy.Runtime.Source`](Puppy.Runtime.Source.html) is for putting a pass
+-- | between a lexer and a parser -- dropping comments, applying an offside
+-- | rule, anything that does not hand over exactly one token for each one it
+-- | is given. Nothing generated calls it and most callers never need it, so it
+-- | is imported qualified when it is wanted rather than added to the names
+-- | every generated module already brings along.
 module Puppy.Runtime
   ( module Puppy.Runtime.Driver
   , module Puppy.Runtime.Value
