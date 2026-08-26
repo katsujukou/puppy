@@ -27,6 +27,7 @@ import Puppy.Fixture.External.Word as W
 import Puppy.Fixture.Calculator as Calculator
 import Puppy.Fixture.Awkward as Awkward
 import Puppy.Fixture.Lists as Lists
+import Test.Puppy.Fixture.Offside as Offside
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (shouldEqual)
 import Test.Spec.Reporter (consoleReporter)
@@ -284,3 +285,5 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "pulls those tokens one at a time too" do
       State.evalState (Tally.tallyFrom oneAtATime) [ W.Yes, W.Count 4 ]
         `shouldEqual` Right 5
+
+  Offside.spec

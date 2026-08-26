@@ -1,0 +1,60 @@
+-- A grammar for an offside language, which is an ordinary grammar.
+--
+-- Nothing below mentions a column, and nothing below could: the parser is
+-- handed terminals and terminals have no position. What makes `let` blocks
+-- work is that something before the parser has already turned indentation into
+-- VOPEN, VSEP and VCLOSE, and those three are terminals like any other. The
+-- rules are then the rules a language with braces and semicolons would have.
+--
+-- See `Test.Puppy.Fixture.Offside` for the pass that inserts them.
+
+%{
+import Puppy.Fixture.Offside.Token as T
+%}
+
+%tokentype { T.Token }
+
+%token LET    "let" { T.At _ T.Let }
+%token IN     "in"  { T.At _ T.In }
+%token EQUALS "="   { T.At _ T.Equals }
+%token PLUS   "+"   { T.At _ T.Plus }
+
+%token { String } NAME   "a name"   { T.At _ (T.Name $$) }
+%token { Int }    NUMBER "a number" { T.At _ (T.Number $$) }
+
+-- The three the lexer never produces.
+%token VOPEN  "the start of a block"       { T.At _ T.BlockStart }
+%token VSEP   "the start of a declaration" { T.At _ T.BlockSep }
+%token VCLOSE "the end of a block"         { T.At _ T.BlockEnd }
+
+%start { String } expression
+
+%type { String } expression expr sum atom decls decl
+
+%%
+
+expression:
+  | e = expr { e }
+
+-- `let` reaches as far to the right as it can, which is why the body is `expr`
+-- and the operand of a `+` is not. Writing it this way needs no precedence
+-- declaration: an addition is built out of `atom`s, so there is never a moment
+-- where the parser could be extending a sum or finishing a `let`.
+expr:
+  | LET VOPEN ds = decls VCLOSE IN e = expr { "(let " <> ds <> " in " <> e <> ")" }
+  | s = sum { s }
+
+decls:
+  | d = decl                 { d }
+  | d = decl VSEP ds = decls { d <> " " <> ds }
+
+decl:
+  | n = NAME EQUALS e = expr { n <> "=" <> e }
+
+sum:
+  | a = sum PLUS b = atom { "(" <> a <> "+" <> b <> ")" }
+  | a = atom              { a }
+
+atom:
+  | n = NAME   { n }
+  | i = NUMBER { show i }

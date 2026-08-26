@@ -20,3 +20,4 @@ package:
       - maybe
       - strings
       - transformers
+      - tuples
