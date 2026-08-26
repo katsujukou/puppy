@@ -22,6 +22,7 @@ import Effect (Effect)
 import Puppy.Fixture.Calculator (Token(..))
 import Puppy.Fixture.External.Calculator as External
 import Puppy.Fixture.External.Tally as Tally
+import Puppy.Fixture.External.Whole as Whole
 import Puppy.Fixture.External.Token as T
 import Puppy.Fixture.External.Word as W
 import Puppy.Fixture.Calculator as Calculator
@@ -285,5 +286,24 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     it "pulls those tokens one at a time too" do
       State.evalState (Tally.tallyFrom oneAtATime) [ W.Yes, W.Count 4 ]
         `shouldEqual` Right 5
+
+  describe "a generated parser whose terminal carries its whole token" do
+    -- The `+` has no payload a pattern could reach, and `@` hands the rule the
+    -- token it matched instead, position and all.
+    it "gives the rule the token rather than a part of it" do
+      Whole.sum
+        [ T.At 1 (T.Number 2)
+        , T.At 3 T.Plus
+        , T.At 5 (T.Number 4)
+        , T.At 7 T.Plus
+        , T.At 9 (T.Number 6)
+        ]
+        `shouldEqual` Right "2+@34+@76"
+
+    it "pulls those tokens one at a time too" do
+      State.evalState
+        (Whole.sumFrom oneAtATime)
+        [ T.At 1 (T.Number 2), T.At 3 T.Plus, T.At 5 (T.Number 4) ]
+        `shouldEqual` Right "2+@34"
 
   Offside.spec

@@ -1,0 +1,30 @@
+-- A terminal whose value is the whole token.
+--
+-- `PLUS` carries nothing a pattern could pick out -- the lexeme is the whole of
+-- what it is -- and yet the token around it knows where it was written. `@` is
+-- how a rule gets at that: the value is the token, not a part of it, and its
+-- type is the one `%tokentype` named.
+
+%{
+import Puppy.Fixture.External.Token as T
+%}
+
+%tokentype { T.Token }
+
+%token PLUS "+" @ { T.At _ T.Plus }
+%token { Int } NUMBER "a number" { T.At _ (T.Number $$) }
+
+%start { String } sum
+
+%type { String } sum expr
+
+%left PLUS
+
+%%
+
+sum:
+  | e = expr { e }
+
+expr:
+  | n = NUMBER                 { show n }
+  | a = expr p = PLUS b = expr { a <> "+@" <> (case p of T.At at _ -> show at) <> b }

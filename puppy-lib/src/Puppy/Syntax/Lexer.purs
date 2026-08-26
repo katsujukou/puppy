@@ -56,6 +56,9 @@ data LexToken
   | TComma
   | TEquals
   | TSemi
+  | TAt
+  -- ^ `@` before a token pattern: the value is the whole token rather than a
+  -- part picked out by `$$`.
   | TLParen
   | TRParen
   | TEnd
@@ -75,6 +78,7 @@ instance Show LexToken where
     TComma -> "TComma"
     TEquals -> "TEquals"
     TSemi -> "TSemi"
+    TAt -> "TAt"
     TLParen -> "TLParen"
     TRParen -> "TRParen"
     TEnd -> "TEnd"
@@ -408,6 +412,7 @@ lex source = map (Array.fromFoldable <<< List.reverse) (go origin Nil)
               ',' -> single TComma
               '=' -> single TEquals
               ';' -> single TSemi
+              '@' -> single TAt
               '(' -> single TLParen
               ')' -> single TRParen
               _ -> Left { message: "unexpected character " <> show c, pos }

@@ -21,7 +21,7 @@ import Data.Either (Either(..))
 import Data.Foldable (traverse_)
 import Data.List (List(..), (:))
 import Data.List as List
-import Data.Maybe (Maybe(..), isJust, maybe)
+import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
 import Data.Traversable (traverse)
 import Puppy.Syntax
   ( Associativity(..)
@@ -39,6 +39,7 @@ import Puppy.Syntax
   , TokenDecl
   , TokenPattern
   , TokenSource(..)
+  , TokenValue(..)
   , TypeDecl
   , DeriveDecl
   , eofToken
@@ -145,6 +146,7 @@ describe = case _ of
   TComma -> "`,`"
   TEquals -> "`=`"
   TSemi -> "`;`"
+  TAt -> "`@`"
   TLParen -> "`(`"
   TRParen -> "`)`"
   TEnd -> "end of file"
@@ -240,6 +242,10 @@ checkNoneReserved role = traverse_ \n -> checkNotReserved n.name n.span role
 type PendingToken =
   { decl :: TokenDecl
   , pattern :: Maybe TokenPattern
+  , whole :: Maybe Span
+  -- ^ The span of the `@` that said the value is the whole token, if one was
+  -- written. Only external mode has anywhere to put it; `tokenSource` is where
+  -- that is found out.
   }
 
 type Decls =
@@ -293,7 +299,7 @@ tokenTypeDecl span acc = do
     fatal "`%tokentype` is declared more than once" span
   pure acc { tokenType = Just ty }
 
--- | `%token { Payload }? (NAME "display"? { Pattern }?)+`
+-- | `%token { Payload }? (NAME "display"? @? { Pattern }?)+`
 tokenDecls :: Decls -> Parser Decls
 tokenDecls acc = do
   payload <- optionalType
@@ -307,13 +313,16 @@ tokenDecls acc = do
         advance
         checkNotReserved name t.span "declared"
         display <- displayName name
+        whole <- optionalAt payload
         pattern <- optionalPattern
+        refuseBothMarks whole pattern
         pure
           ( Just read
               { found =
                   { decl:
                       { name, constructor: name, display, payload, span: t.span }
                   , pattern
+                  , whole
                   } : read.found
               , first = false
               }
@@ -322,6 +331,31 @@ tokenDecls acc = do
         | read.first ->
             fatal ("expected a token name, found " <> describe t.token) t.span
         | otherwise -> pure Nothing
+
+  -- `@` says the value is the whole token, whose type is the one `%tokentype`
+  -- named. There is nothing left for a payload type to say, so a declaration
+  -- that has one has already said something else.
+  optionalAt payload = do
+    t <- current
+    case t.token of
+      TAt -> do
+        advance
+        case payload of
+          Nothing -> pure (Just t.span)
+          Just _ -> fatal
+            "`@` makes the value the whole token, whose type is the one `%tokentype` named; a `{ ... }` payload type has nothing left to say"
+            t.span
+      _ -> pure Nothing
+
+  -- One mark says which part of the token the value is and the other says it is
+  -- all of it. The `$$` is the later of the two, so it is the one to point at.
+  refuseBothMarks whole pattern = case whole, pattern of
+    Just _, Just p -> case Array.head p.holes of
+      Just hole -> fatal
+        "`@` already makes the value the whole token, so there is no part left for `$$` to stand for"
+        hole
+      Nothing -> pure unit
+    _, _ -> pure unit
 
   displayName fallback = do
     t <- current
@@ -574,20 +608,30 @@ symbolRef = do
 -- | token has no pattern and an external one has nothing else.
 tokenSource :: Maybe Code -> Array PendingToken -> Parser TokenSource
 tokenSource declared pending = case declared of
-  Nothing -> case Array.find (isJust <<< _.pattern) pending of
-    Nothing -> pure (GeneratedTokens (map _.decl pending))
+  Nothing -> case Array.find (isJust <<< _.whole) pending of
     Just stray -> fatal
       ( "token `" <> stray.decl.name
-          <> "` is given a pattern, but the grammar has no `%tokentype`; a pattern says how to recognise a value of a token type Puppy did not write"
+          <> "` is marked `@`, but the grammar has no `%tokentype`; `@` makes the value the whole token, which is only worth having where the token type is one Puppy did not write"
       )
-      (maybe stray.decl.span _.code.span stray.pattern)
+      (fromMaybe stray.decl.span stray.whole)
+    Nothing -> case Array.find (isJust <<< _.pattern) pending of
+      Nothing -> pure (GeneratedTokens (map _.decl pending))
+      Just stray -> fatal
+        ( "token `" <> stray.decl.name
+            <> "` is given a pattern, but the grammar has no `%tokentype`; a pattern says how to recognise a value of a token type Puppy did not write"
+        )
+        (maybe stray.decl.span _.code.span stray.pattern)
 
   Just tokenType -> do
     tokens <- traverse withPattern pending
     pure (ExternalTokens { tokenType, tokens })
   where
   withPattern p = case p.pattern of
-    Just pattern -> pure { decl: p.decl, pattern }
+    Just pattern -> pure
+      { decl: p.decl
+      , pattern
+      , value: maybe FromPattern FromToken p.whole
+      }
     Nothing -> fatal
       ( "token `" <> p.decl.name
           <> "` needs a `{ ... }` pattern; with `%tokentype` the grammar says how each terminal is recognised, because Puppy is not writing the constructors"

@@ -9,7 +9,10 @@ import Data.String.Common (joinWith)
 import Effect.Aff (Aff)
 import Puppy.Expand (expand)
 import Puppy.Grammar (Action(..), Bound(..), Grammar, renderProduction)
+import Data.Maybe (Maybe(..))
+import Partial.Unsafe (unsafeCrashWith)
 import Puppy.Syntax (ConflictDirective(..))
+import Puppy.Syntax as Syntax
 import Puppy.Syntax.Parser as Parser
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
@@ -62,6 +65,54 @@ shouldFailWith needle source = case expanded source of
         ( "expected a failure mentioning " <> show needle <> ", got: "
             <> joinWith "; " messages
         )
+
+-- | A grammar that was not read from source, so that a pass can be shown
+-- | checking something the parser would never have let through.
+shouldFailBuilt :: String -> Syntax.Grammar -> Aff Unit
+shouldFailBuilt needle syn = case expand syn of
+  Right _ -> fail ("expected a failure mentioning " <> show needle)
+  Left errs ->
+    when (not (Array.any (contains (Pattern needle) <<< _.message) errs)) do
+      fail
+        ( "expected a failure mentioning " <> show needle <> ", got: "
+            <> joinWith "; " (map _.message errs)
+        )
+
+-- | A grammar with one terminal marked `@`, read from source and so correct.
+marked :: Syntax.Grammar
+marked = case Parser.parse markedSource of
+  Left err -> unsafeCrashWith ("the fixture does not parse: " <> err.message)
+  Right syn -> syn
+
+markedSource :: String
+markedSource =
+  """
+%tokentype { T.Token }
+%token A "a" @ { T.At _ T.Plus }
+%start { X } m
+%type { X } m
+%%
+m: | A { 1 }
+"""
+
+onFirstToken
+  :: (Syntax.ExternalToken -> Syntax.ExternalToken)
+  -> Syntax.Grammar
+  -> Syntax.Grammar
+onFirstToken f syn = syn
+  { tokens = case syn.tokens of
+      Syntax.ExternalTokens declared -> Syntax.ExternalTokens
+        declared { tokens = Array.modifyAtIndices [ 0 ] f declared.tokens }
+      other -> other
+  }
+
+givePayload :: Syntax.Grammar -> Syntax.Grammar
+givePayload = onFirstToken \t ->
+  t { decl = t.decl { payload = Just { text: "Int", span: t.pattern.code.span } } }
+
+giveHole :: Syntax.Grammar -> Syntax.Grammar
+giveHole = onFirstToken \t ->
+  t { pattern = t.pattern { holes = [ t.pattern.code.span ] } }
 
 -- | Every needle has to be matched by some message. This is what tells apart
 -- | collecting independent errors from stopping at the first one.
@@ -295,6 +346,21 @@ one(t): | t %shift { 1 }
 """
         )
         `shouldEqual` Right [ Inferred, PreferShift, PreferShift ]
+
+    -- The parser refuses both of these, so a grammar read from source cannot
+    -- carry them. `Syntax.Grammar` is a public type, though, and one built or
+    -- rewritten by hand can -- and then nothing downstream would notice.
+    it "catches a hand-built `@` that also declares a payload type" do
+      shouldFailBuilt "has nothing left to say" (givePayload marked)
+
+    it "catches a hand-built `@` whose pattern also has a `$$`" do
+      shouldFailBuilt "no part left for" (giveHole marked)
+
+    -- The pair that would otherwise agree with each other: a payload type and
+    -- exactly one `$$` is what a token without `@` is supposed to look like,
+    -- so a check that only counted holes would find nothing wrong here.
+    it "catches a hand-built `@` carrying both at once" do
+      shouldFailBuilt "has nothing left to say" (givePayload (giveHole marked))
 
     it "rejects an inline rule that reaches itself" do
       shouldFailWith "reaches itself"

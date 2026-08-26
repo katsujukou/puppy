@@ -40,7 +40,7 @@ import Data.Tuple (Tuple(..))
 import Puppy.Grammar (Action(..), Bound(..), Production, Symbol(..))
 import Puppy.Grammar as Grammar
 import Puppy.Names as Names
-import Puppy.Syntax (ConflictDirective(..), Pos, Span, SymbolRef(..))
+import Puppy.Syntax (ConflictDirective(..), Pos, Span, SymbolRef(..), TokenValue(..))
 import Puppy.Syntax as Syntax
 
 type ExpandError = { message :: String, span :: Span }
@@ -284,8 +284,36 @@ validate syn = Array.concat
 
   -- `$$` is where the payload sits, so a token that carries one needs exactly
   -- one, and a token that carries nothing has nowhere to put it.
-  placeholderErrors = Array.concatMap holes externalTokens
+  --
+  -- A token marked `@` has neither. The parser refuses both marks together and
+  -- refuses a payload type beside `@`, so a grammar read from source cannot
+  -- reach the arms below -- but a `Syntax.Grammar` is a public type and one
+  -- built by hand can, and a check that only the parser makes is a check this
+  -- pass does not have.
+  placeholderErrors = Array.concatMap perToken externalTokens
     where
+    perToken t = case t.value of
+      FromToken span -> whole t span
+      FromPattern -> holes t
+
+    whole t span =
+      ( case t.decl.payload of
+          Nothing -> []
+          Just _ ->
+            [ { message: "token `" <> t.decl.name
+                  <> "` is marked `@`, so its value is the whole token and the type of that is the one `%tokentype` named; a `{ ... }` payload type has nothing left to say"
+              , span
+              }
+            ]
+      ) <> case Array.head t.pattern.holes of
+        Nothing -> []
+        Just hole ->
+          [ { message: "token `" <> t.decl.name
+                <> "` is marked `@`, so its value is the whole token and there is no part left for `$$` to stand for"
+            , span: hole
+            }
+          ]
+
     holes t = case t.decl.payload, Array.length t.pattern.holes of
       Nothing, 0 -> []
       Nothing, _ ->

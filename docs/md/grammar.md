@@ -142,6 +142,33 @@ A token declared with a payload type needs exactly one `$$`; one declared
 without needs none. Puppy checks that much and no more: a pattern is PureScript
 and what it means is the compiler's business.
 
+#### `@`, for the whole token
+
+Sometimes the value a rule wants is the token, not a part of it. `@` before the
+pattern says so:
+
+```plain
+%token IF "if" @ { T.At _ (T.Ident "if") }
+```
+
+The two marks are a pair. `$$`, inside the pattern, says *this part is the
+value*; `@`, before it, says *all of it is*. A token declaration writes one or
+the other, never both.
+
+`@` is what a token needs when the pattern that finds it has already spent
+itself on saying which token it is. `T.At _ (T.Ident "if")` pins the lexeme
+down, and pinning it down is what leaves nowhere for a `$$` to stand -- so
+without `@` the terminal arrives carrying nothing, and the position in `T.At`
+is lost to every rule that matches it.
+
+The value's type is the one `%tokentype` named, said once there rather than on
+every terminal, so a `@` token takes no `{ ... }` payload type. Writing one is
+an error, as is a `$$` in the same pattern.
+
+`@` needs a `%tokentype`, and is refused without one.
+
+#### How a placeholder is found
+
 `$$` is not a search and replace over the text. Puppy's lexer finds it while
 reading the pattern, so it knows code from everything that only looks like it:
 

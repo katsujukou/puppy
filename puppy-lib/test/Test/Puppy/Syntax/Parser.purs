@@ -16,6 +16,8 @@ import Puppy.Syntax
   , Rule
   , SymbolRef(..)
   , TokenDecl
+  , TokenSource(..)
+  , TokenValue(..)
   , declaredTokens
   )
 import Puppy.Syntax.Lexer (LexToken(..), Located)
@@ -125,6 +127,21 @@ rejectionAt needle at source = case parse source of
     { line: err.span.start.line, column: err.span.start.column }
       `shouldEqual` at
 
+externalWithWhole :: String
+externalWithWhole =
+  """
+%tokentype { T.Token }
+%token MINUS "-" { T.At _ T.Minus } PLUS "+" @ { T.At _ T.Plus } TIMES "*" { T.At _ T.Times }
+%start { X } m
+%%
+m: | PLUS { 1 } | MINUS { 2 } | TIMES { 3 }
+"""
+
+isWhole :: TokenValue -> Boolean
+isWhole = case _ of
+  FromToken _ -> true
+  FromPattern -> false
+
 spec :: Spec Unit
 spec = describe "Puppy.Syntax.Parser" do
   describe "declarations" do
@@ -151,6 +168,36 @@ spec = describe "Puppy.Syntax.Parser" do
       withGrammar \g ->
         map (\d -> map _.text d.payload) (tokenDecls g) `shouldEqual`
           [ Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Just " Int " ]
+
+    -- `@` is what a terminal writes when its value is the whole token rather
+    -- than a part of it, which a `$$` could not have reached.
+    --
+    -- One declaration, three names, and the mark on the middle one: `@` is per
+    -- token and not per `%token`, which is what lets a grammar mix the two
+    -- kinds without splitting every terminal into a declaration of its own.
+    it "records which tokens are marked `@`, one by one" do
+      case parse externalWithWhole of
+        Left err -> fail ("failed to parse: " <> err.message)
+        Right g -> case g.tokens of
+          GeneratedTokens _ -> fail "expected an external token type"
+          ExternalTokens external ->
+            map (isWhole <<< _.value) external.tokens
+              `shouldEqual` [ false, true, false ]
+
+    -- The column matters as much as the message. The mark that cannot be
+    -- there is the one to point at, and for a `$$` beside a `@` that is the
+    -- `$$`, which is the later of the two.
+    it "rejects `@` on a token that also declares a payload type" do
+      rejectionAt "has nothing left to say" { line: 2, column: 18 }
+        "%tokentype { T }\n%token { Int } A @ { PA }\n%start { X } m\n%%\nm: | A { 1 }\n"
+
+    it "rejects `@` on a pattern that also has a `$$`" do
+      rejectionAt "no part left for" { line: 2, column: 17 }
+        "%tokentype { T }\n%token A @ { PA $$ }\n%start { X } m\n%%\nm: | A { 1 }\n"
+
+    it "rejects `@` where Puppy writes the token type" do
+      rejectionAt "no `%tokentype`" { line: 1, column: 10 }
+        "%token A @ { PA }\n%start { X } m\n%%\nm: | A { 1 }\n"
 
     it "reads start symbols with their result type" do
       withGrammar \g ->

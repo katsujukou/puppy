@@ -20,6 +20,7 @@ module Puppy.Syntax
   , Associativity(..)
   , TokenSource(..)
   , TokenPattern
+  , TokenValue(..)
   , ExternalToken
   , TokenDecl
   , declaredTokens
@@ -107,11 +108,36 @@ data TokenSource
       , tokens :: Array ExternalToken
       }
 
--- | A `%token` in external mode: the declaration, and the pattern that picks
--- | it out of the author's own type.
+-- | Where a terminal's semantic value comes from, in external mode.
+-- |
+-- | The two are exclusive, and the parser is what makes them so: a pattern
+-- | either says which part of the token the value is or the grammar says the
+-- | value is the token, and writing both marks is refused where both are still
+-- | in front of it.
+data TokenValue
+  = FromPattern
+  -- ^ The value is whatever `$$` stands for, or nothing at all if the pattern
+  -- has no `$$`. Which of those it is depends on the declared payload type, and
+  -- checking that the two agree is a later pass's job.
+  | FromToken Span
+
+-- ^ `@` before the pattern: the value is the whole token, whose type is the one
+-- `%tokentype` named. The span is the `@` itself, so a diagnostic can point at
+-- the mark rather than at the pattern it applies to.
+
+derive instance Eq TokenValue
+
+instance Show TokenValue where
+  show = case _ of
+    FromPattern -> "FromPattern"
+    FromToken span -> "(FromToken " <> show span <> ")"
+
+-- | A `%token` in external mode: the declaration, the pattern that picks it out
+-- | of the author's own type, and what of the token the value is.
 type ExternalToken =
   { decl :: TokenDecl
   , pattern :: TokenPattern
+  , value :: TokenValue
   }
 
 derive instance Eq TokenSource

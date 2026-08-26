@@ -146,7 +146,7 @@ import Language.Token as T
 
 %tokentype { T.Token }
 
-%token PLUS { T.At _ T.Plus }
+%token PLUS @ { T.At _ T.Plus }
 %token { Int } INT "an integer" { T.At _ (T.Number $$) }
 %token { String } NAME "a name"
   { T.At _
@@ -328,6 +328,18 @@ spec = describe "Puppy.Codegen" do
         -- Nothing of Puppy's own is declared for it, and nothing is exported.
         notMentions out.source "data Token"
         notMentions out.source "Token(..)"
+
+  -- `@` says the value is the token itself, so the arm that answers with a
+  -- value needs a name for what it matched and the one that answers with a
+  -- number does not.
+  it "names the token where a terminal carries the whole of it" do
+    case generated externalGrammar of
+      Left message -> fail ("failed to generate: " <> message)
+      Right out -> do
+        mentions out.source
+          "Just (puppyToken@(T.At _ T.Plus)) -> Puppy.Runtime.box puppyToken"
+        mentions out.source "Just (T.At _ T.Plus) -> 0"
+        notMentions out.source "puppyToken@(T.At _ T.Plus)) -> 0"
 
   it "escapes what cannot be written into a string literal" do
     case generated "%token A \"two\nlines\"\n%start { Int } t\n%%\nt: | A { 0 }\n" of

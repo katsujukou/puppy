@@ -190,10 +190,17 @@ data Token = At Pos Lexeme
 ```
 
 Under [`%tokentype`](grammar.md#tokentype) that is a type you already own, and
-`found` hands one back. A generated token type can carry a position too —
-`%token { Pos } IDENT` — but a payload is one type per token, so a position on
-every token means saying so on every token, and the external route is usually
-easier for a language of any size.
+`found` hands one back. A rule that wants the position of a token it matched
+asks for the token itself, with [`@`](grammar.md#-for-the-whole-token):
+
+```plain
+%token IF "if" @ { At _ (Ident "if") }
+```
+
+A generated token type can carry a position too — `%token { Pos } IDENT` — but
+a payload is one type per token, so a position on every token means saying so
+on every token, and the external route is usually easier for a language of any
+size.
 
 `found` is `Nothing` only at the true end of the input. An error reported
 against a token some pass invented, rather than one the text contains, is

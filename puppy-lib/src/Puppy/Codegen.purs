@@ -66,6 +66,12 @@ declaredTypes input = Map.fromFoldable
 tokenDecls :: Input -> Array TokenDecl
 tokenDecls input = Syntax.declaredTokens input.core.tokens
 
+-- | The `%tokentype` type, where there is one.
+tokenTypeOf :: Input -> Maybe Code
+tokenTypeOf input = case input.core.tokens of
+  Syntax.GeneratedTokens _ -> Nothing
+  Syntax.ExternalTokens spec -> Just spec.tokenType
+
 -- | How the generated module names the token type.
 -- |
 -- | `Token` when Puppy wrote it, and the author's own type when it did not.
@@ -80,9 +86,14 @@ tokenRef input acc = case input.core.tokens of
 -- | The patterns that pick each terminal out of an external token type, in
 -- | declaration order. Empty when Puppy wrote the type itself.
 tokenPatterns :: Input -> Array Syntax.TokenPattern
-tokenPatterns input = case input.core.tokens of
+tokenPatterns input = map _.pattern (externalTokens input)
+
+-- | Whether each terminal's value is a part of its token or the whole of it,
+-- | by terminal number. Empty where Puppy wrote the token type itself.
+externalTokens :: Input -> Array Syntax.ExternalToken
+externalTokens input = case input.core.tokens of
   Syntax.GeneratedTokens _ -> []
-  Syntax.ExternalTokens spec -> map _.pattern spec.tokens
+  Syntax.ExternalTokens spec -> spec.tokens
 
 external :: Input -> Boolean
 external input = case input.core.tokens of
@@ -90,9 +101,15 @@ external input = case input.core.tokens of
   Syntax.ExternalTokens _ -> true
 
 -- | The type a symbol's semantic value has, where the grammar said.
+-- |
+-- | A terminal marked `@` carries the whole token, so its type is the one
+-- | `%tokentype` named -- said once there rather than on every terminal, which
+-- | is why `@` takes no payload type of its own.
 typeOfSymbol :: Input -> Sym -> Maybe Code
 typeOfSymbol input = case _ of
-  T t -> Array.index (tokenDecls input) t >>= _.payload
+  T t -> case Array.index (externalTokens input) t of
+    Just declared | declared.value /= Syntax.FromPattern -> tokenTypeOf input
+    _ -> Array.index (tokenDecls input) t >>= _.payload
   N n -> Array.index input.grammar.nonterminals n
     >>= \name -> Map.lookup name (declaredTypes input)
 
@@ -426,12 +443,13 @@ allTokens input = Array.snoc (tokenDecls input)
 
 terminalFunctions :: Input -> Emitter -> Emitter
 terminalFunctions input e =
-  terminalFunction "terminalIndex" "puppyIndexOf" "Int" "_" indexOf
+  terminalFunction "terminalIndex" "puppyIndexOf" "Int" "_" Nothing indexOf
     (show (Array.length tokens))
     indexNote
     e
     # terminalFunction "terminalValue" "puppyValueOf" "Puppy.Runtime.Value"
         "puppyPayload"
+        (Just wholeBinder)
         valueOf
         ( "Puppy.Runtime.internalError\n" <> spaces 4
             <> quoted "a value was asked for a token this grammar does not declare"
@@ -454,22 +472,32 @@ terminalFunctions input e =
 
   indexOf i _ = show i
 
-  valueOf _ decl = "Puppy.Runtime.box "
-    <> (if isJust decl.payload then "puppyPayload" else "unit")
+  valueOf i decl = "Puppy.Runtime.box " <> what
+    where
+    what
+      | wholeToken i = wholeBinder
+      | isJust decl.payload = "puppyPayload"
+      | otherwise = "unit"
+
+  wholeBinder = "puppyToken"
+
+  wholeToken i = case Array.index (externalTokens input) i of
+    Just t -> t.value /= Syntax.FromPattern
+    Nothing -> false
 
   -- Where Puppy wrote the token type it knows the constructors, so a `case`
   -- over them is total and wants no fallback.
   --
   -- Where it did not, one is needed for a token the grammar never declared --
   -- and then the `Boolean` earns its keep. See the note it is emitted with.
-  terminalFunction name helper result bound rhs fallback note acc
+  terminalFunction name helper result bound whole rhs fallback note acc
     | external input =
         Emit.write (helper <> " :: Boolean -> Puppy.Deps.Maybe ")
           (Emit.write note acc)
           # tokenRef input
           # Emit.write
               (" -> " <> result <> "\n" <> helper <> " = case _, _ of\n")
-          # flip (Array.foldl (arm bound rhs "true, ")) numbered
+          # flip (Array.foldl (arm bound whole rhs "true, ")) numbered
           # Emit.write (line 2 ("_, _ -> " <> fallback))
           # Emit.write ("\n" <> name <> " :: Puppy.Deps.Maybe ")
           # tokenRef input
@@ -479,7 +507,7 @@ terminalFunctions input e =
         Emit.write ("\n" <> name <> " :: Puppy.Deps.Maybe ") acc
           # tokenRef input
           # Emit.write (" -> " <> result <> "\n" <> name <> " = case _ of\n")
-          # flip (Array.foldl (arm bound rhs "")) numbered
+          # flip (Array.foldl (arm bound whole rhs "")) numbered
 
   -- Why generated code classifies a token through a `Boolean` it always passes
   -- as `true`.
@@ -507,21 +535,28 @@ terminalFunctions input e =
     "\n-- | The value a token carries, boxed for the parser stack. The `Boolean` is\n"
       <> "-- | there for the reason given above.\n"
 
-  arm bound rhs prefix acc (Tuple i decl) =
+  arm bound whole rhs prefix acc (Tuple i decl) =
     Emit.write (spaces 2 <> prefix) acc
-      # match i decl bound
+      # match i decl bound whole
       # Emit.write (" -> " <> rhs i decl <> "\n")
 
   -- What stands to the left. In external mode this is the author's own
   -- pattern, written out with `bound` where the `$$` was; in generated mode
   -- Puppy knows the constructor because it wrote it.
-  match i decl bound acc
+  --
+  -- A terminal marked `@` needs a name for the token it matched, and only
+  -- where the value is being built -- the function that answers with a number
+  -- has no use for one, and binding it there would be a name nothing reads.
+  match i decl bound whole acc
     | i == lastIndex = Emit.write "Puppy.Deps.Nothing" acc
     | otherwise = case Array.index patterns i of
         Just pattern ->
-          Emit.write "Puppy.Deps.Just (" acc
-            # Emit.writePattern 2 bound pattern
-            # Emit.write ")"
+          let
+            binding = if wholeToken i then whole else Nothing
+          in
+            Emit.write ("Puppy.Deps.Just (" <> maybe "" (_ <> "@(") binding) acc
+              # Emit.writePattern 2 bound pattern
+              # Emit.write (maybe ")" (const "))") binding)
         Nothing -> Emit.write (declared decl bound) acc
 
   declared decl bound =
