@@ -19,7 +19,7 @@ import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Now (now)
 import Partial.Unsafe (unsafeCrashWith)
-import Puppy.Runtime (Action(..), ParseError, Table, parse, parseM)
+import Puppy.Runtime (ParseError, Table, acceptAction, errorAction, parse, parseM, reduce, shift)
 import Puppy.Runtime.Source (initial, transduce)
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
@@ -68,29 +68,29 @@ exprTable =
   }
   where
   action = case _, _ of
-    0, 0 -> Shift 3
-    0, 2 -> Shift 4
-    1, 1 -> Shift 5
-    1, 4 -> Accept
-    2, 1 -> Reduce 1
-    2, 3 -> Reduce 1
-    2, 4 -> Reduce 1
-    3, 1 -> Reduce 2
-    3, 3 -> Reduce 2
-    3, 4 -> Reduce 2
-    4, 0 -> Shift 3
-    4, 2 -> Shift 4
-    5, 0 -> Shift 3
-    5, 2 -> Shift 4
-    6, 1 -> Shift 5
-    6, 3 -> Shift 8
-    7, 1 -> Reduce 0
-    7, 3 -> Reduce 0
-    7, 4 -> Reduce 0
-    8, 1 -> Reduce 3
-    8, 3 -> Reduce 3
-    8, 4 -> Reduce 3
-    _, _ -> Error
+    0, 0 -> shift 3
+    0, 2 -> shift 4
+    1, 1 -> shift 5
+    1, 4 -> acceptAction
+    2, 1 -> reduce 1
+    2, 3 -> reduce 1
+    2, 4 -> reduce 1
+    3, 1 -> reduce 2
+    3, 3 -> reduce 2
+    3, 4 -> reduce 2
+    4, 0 -> shift 3
+    4, 2 -> shift 4
+    5, 0 -> shift 3
+    5, 2 -> shift 4
+    6, 1 -> shift 5
+    6, 3 -> shift 8
+    7, 1 -> reduce 0
+    7, 3 -> reduce 0
+    7, 4 -> reduce 0
+    8, 1 -> reduce 3
+    8, 3 -> reduce 3
+    8, 4 -> reduce 3
+    _, _ -> errorAction
 
   goto = case _, _ of
     0, 0 -> 1
@@ -164,13 +164,13 @@ rightRecTable =
   }
   where
   action = case _, _ of
-    0, 0 -> Shift 2
-    0, 1 -> Reduce 1
-    1, 1 -> Accept
-    2, 0 -> Shift 2
-    2, 1 -> Reduce 1
-    3, 1 -> Reduce 0
-    _, _ -> Error
+    0, 0 -> shift 2
+    0, 1 -> reduce 1
+    1, 1 -> acceptAction
+    2, 0 -> shift 2
+    2, 1 -> reduce 1
+    3, 1 -> reduce 0
+    _, _ -> errorAction
 
   goto = case _, _ of
     0, 0 -> 1

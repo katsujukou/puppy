@@ -196,38 +196,232 @@ semanticActionAt puppyIndex = case Puppy.Deps.index semanticActionTable puppyInd
   Puppy.Deps.Nothing -> Puppy.Runtime.internalError
     ("no semantic action " <> show puppyIndex)
 
-actionRows :: Array (Array { on :: Int, take :: Puppy.Runtime.Action })
-actionRows =
-  [ [ { on: 0, take: Puppy.Runtime.Shift 1 }, { on: 4, take: Puppy.Runtime.Shift 2 }, { on: 5, take: Puppy.Runtime.Shift 3 } ]
-  , [ { on: 6, take: Puppy.Runtime.Shift 10 } ]
-  , [ { on: 3, take: Puppy.Runtime.Reduce 8 }, { on: 7, take: Puppy.Runtime.Reduce 8 }, { on: 8, take: Puppy.Runtime.Reduce 8 }, { on: 9, take: Puppy.Runtime.Reduce 8 } ]
-  , [ { on: 3, take: Puppy.Runtime.Reduce 9 }, { on: 7, take: Puppy.Runtime.Reduce 9 }, { on: 8, take: Puppy.Runtime.Reduce 9 }, { on: 9, take: Puppy.Runtime.Reduce 9 } ]
-  , [ { on: 9, take: Puppy.Runtime.Accept } ]
-  , [ { on: 9, take: Puppy.Runtime.Reduce 0 } ]
-  , [ { on: 3, take: Puppy.Runtime.Shift 8 }, { on: 7, take: Puppy.Runtime.Reduce 2 }, { on: 8, take: Puppy.Runtime.Reduce 2 }, { on: 9, take: Puppy.Runtime.Reduce 2 } ]
-  , [ { on: 3, take: Puppy.Runtime.Reduce 7 }, { on: 7, take: Puppy.Runtime.Reduce 7 }, { on: 8, take: Puppy.Runtime.Reduce 7 }, { on: 9, take: Puppy.Runtime.Reduce 7 } ]
-  , [ { on: 4, take: Puppy.Runtime.Shift 2 }, { on: 5, take: Puppy.Runtime.Shift 3 } ]
-  , [ { on: 3, take: Puppy.Runtime.Reduce 6 }, { on: 7, take: Puppy.Runtime.Reduce 6 }, { on: 8, take: Puppy.Runtime.Reduce 6 }, { on: 9, take: Puppy.Runtime.Reduce 6 } ]
-  , [ { on: 4, take: Puppy.Runtime.Shift 11 } ]
-  , [ { on: 2, take: Puppy.Runtime.Shift 19 } ]
-  , [ { on: 8, take: Puppy.Runtime.Shift 16 } ]
-  , [ { on: 7, take: Puppy.Runtime.Shift 14 }, { on: 8, take: Puppy.Runtime.Reduce 3 } ]
-  , [ { on: 4, take: Puppy.Runtime.Shift 11 } ]
-  , [ { on: 8, take: Puppy.Runtime.Reduce 4 } ]
-  , [ { on: 1, take: Puppy.Runtime.Shift 17 } ]
-  , [ { on: 0, take: Puppy.Runtime.Shift 1 }, { on: 4, take: Puppy.Runtime.Shift 2 }, { on: 5, take: Puppy.Runtime.Shift 3 } ]
-  , [ { on: 7, take: Puppy.Runtime.Reduce 1 }, { on: 8, take: Puppy.Runtime.Reduce 1 }, { on: 9, take: Puppy.Runtime.Reduce 1 } ]
-  , [ { on: 0, take: Puppy.Runtime.Shift 1 }, { on: 4, take: Puppy.Runtime.Shift 2 }, { on: 5, take: Puppy.Runtime.Shift 3 } ]
-  , [ { on: 7, take: Puppy.Runtime.Reduce 5 }, { on: 8, take: Puppy.Runtime.Reduce 5 } ]
+actionTable :: Array Int
+actionTable =
+  [ 3
+  , 0
+  , 0
+  , 0
+  , 4
+  , 5
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 12
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , -9
+  , 0
+  , 0
+  , 0
+  , -9
+  , -9
+  , -9
+  , 0
+  , 0
+  , 0
+  , -10
+  , 0
+  , 0
+  , 0
+  , -10
+  , -10
+  , -10
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 1
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , -1
+  , 0
+  , 0
+  , 0
+  , 10
+  , 0
+  , 0
+  , 0
+  , -3
+  , -3
+  , -3
+  , 0
+  , 0
+  , 0
+  , -8
+  , 0
+  , 0
+  , 0
+  , -8
+  , -8
+  , -8
+  , 0
+  , 0
+  , 0
+  , 0
+  , 4
+  , 5
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , -7
+  , 0
+  , 0
+  , 0
+  , -7
+  , -7
+  , -7
+  , 0
+  , 0
+  , 0
+  , 0
+  , 13
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 21
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 18
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 16
+  , -4
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 13
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , -5
+  , 0
+  , 0
+  , 19
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 3
+  , 0
+  , 0
+  , 0
+  , 4
+  , 5
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , -2
+  , -2
+  , -2
+  , 3
+  , 0
+  , 0
+  , 0
+  , 4
+  , 5
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , 0
+  , -6
+  , -6
+  , 0
   ]
 
+actionWidth :: Int
+actionWidth = 10
+
 actionAt :: Int -> Int -> Puppy.Runtime.Action
-actionAt puppyState puppyTerminal = case Puppy.Deps.index actionRows puppyState of
-  Puppy.Deps.Nothing -> Puppy.Runtime.internalError
-    ("no action row for state " <> show puppyState)
-  Puppy.Deps.Just puppyRow -> case Puppy.Deps.find (\puppyEntry -> puppyEntry.on == puppyTerminal) puppyRow of
-    Puppy.Deps.Just puppyEntry -> puppyEntry.take
-    Puppy.Deps.Nothing -> Puppy.Runtime.Error
+actionAt puppyState puppyTerminal =
+  if puppyTerminal < 0 || puppyTerminal >= actionWidth then
+    Puppy.Runtime.errorAction
+  else
+    case Puppy.Deps.index actionTable (puppyState * actionWidth + puppyTerminal) of
+      Puppy.Deps.Just puppyCode -> puppyCode
+      Puppy.Deps.Nothing -> Puppy.Runtime.internalError
+        ("no action for state " <> show puppyState)
 
 gotoRows :: Array (Array { on :: Int, to :: Int })
 gotoRows =

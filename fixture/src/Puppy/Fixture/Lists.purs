@@ -163,30 +163,74 @@ puppyInline4_0 puppyValues =
     Puppy.Runtime.box
       (x <> "?")
 
-actionRows :: Array (Array { on :: Int, take :: Puppy.Runtime.Action })
-actionRows =
-  [ [ { on: 1, take: Puppy.Runtime.Shift 2 }, { on: 2, take: Puppy.Runtime.Shift 3 }, { on: 3, take: Puppy.Runtime.Reduce 1 } ]
-  , [ { on: 1, take: Puppy.Runtime.Shift 2 }, { on: 2, take: Puppy.Runtime.Shift 3 } ]
-  , [ { on: 0, take: Puppy.Runtime.Reduce 3 }, { on: 3, take: Puppy.Runtime.Reduce 3 } ]
-  , [ { on: 0, take: Puppy.Runtime.Reduce 4 }, { on: 3, take: Puppy.Runtime.Reduce 4 } ]
-  , [ { on: 3, take: Puppy.Runtime.Reduce 7 } ]
-  , [ { on: 3, take: Puppy.Runtime.Accept } ]
-  , [ { on: 3, take: Puppy.Runtime.Accept } ]
-  , [ { on: 3, take: Puppy.Runtime.Reduce 0 } ]
-  , [ { on: 0, take: Puppy.Runtime.Shift 9 }, { on: 3, take: Puppy.Runtime.Reduce 5 } ]
-  , [ { on: 1, take: Puppy.Runtime.Shift 2 }, { on: 2, take: Puppy.Runtime.Shift 3 } ]
-  , [ { on: 3, take: Puppy.Runtime.Reduce 2 } ]
-  , [ { on: 0, take: Puppy.Runtime.Shift 9 }, { on: 3, take: Puppy.Runtime.Reduce 5 } ]
-  , [ { on: 3, take: Puppy.Runtime.Reduce 6 } ]
+actionTable :: Array Int
+actionTable =
+  [ 0
+  , 4
+  , 5
+  , -2
+  , 0
+  , 4
+  , 5
+  , 0
+  , -4
+  , 0
+  , 0
+  , -4
+  , -5
+  , 0
+  , 0
+  , -5
+  , 0
+  , 0
+  , 0
+  , -8
+  , 0
+  , 0
+  , 0
+  , 1
+  , 0
+  , 0
+  , 0
+  , 1
+  , 0
+  , 0
+  , 0
+  , -1
+  , 11
+  , 0
+  , 0
+  , -6
+  , 0
+  , 4
+  , 5
+  , 0
+  , 0
+  , 0
+  , 0
+  , -3
+  , 11
+  , 0
+  , 0
+  , -6
+  , 0
+  , 0
+  , 0
+  , -7
   ]
 
+actionWidth :: Int
+actionWidth = 4
+
 actionAt :: Int -> Int -> Puppy.Runtime.Action
-actionAt puppyState puppyTerminal = case Puppy.Deps.index actionRows puppyState of
-  Puppy.Deps.Nothing -> Puppy.Runtime.internalError
-    ("no action row for state " <> show puppyState)
-  Puppy.Deps.Just puppyRow -> case Puppy.Deps.find (\puppyEntry -> puppyEntry.on == puppyTerminal) puppyRow of
-    Puppy.Deps.Just puppyEntry -> puppyEntry.take
-    Puppy.Deps.Nothing -> Puppy.Runtime.Error
+actionAt puppyState puppyTerminal =
+  if puppyTerminal < 0 || puppyTerminal >= actionWidth then
+    Puppy.Runtime.errorAction
+  else
+    case Puppy.Deps.index actionTable (puppyState * actionWidth + puppyTerminal) of
+      Puppy.Deps.Just puppyCode -> puppyCode
+      Puppy.Deps.Nothing -> Puppy.Runtime.internalError
+        ("no action for state " <> show puppyState)
 
 gotoRows :: Array (Array { on :: Int, to :: Int })
 gotoRows =

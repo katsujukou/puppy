@@ -21,7 +21,11 @@
 -- | the next element of an array. Nothing is buffered and nothing is read
 -- | ahead: exactly one token is outstanding at a time.
 module Puppy.Runtime.Driver
-  ( Action(..)
+  ( Action
+  , errorAction
+  , acceptAction
+  , shift
+  , reduce
   , ProductionInfo
   , Table
   , ParseError
@@ -45,22 +49,40 @@ import Data.List as List
 import Data.Maybe (Maybe(..))
 
 -- | One entry of the LR action table, indexed by (state, terminal).
-data Action
-  = Shift Int
-  -- ^ Consume the lookahead and move to the given state.
-  | Reduce Int
-  -- ^ Apply the production with the given index.
-  | Accept
-  | Error
+-- | One cell of the action table, as an `Int`.
+-- |
+-- | ```
+-- |   0        the token is an error here
+-- |   1        accept
+-- |   n >= 2   shift, and go to state n - 2
+-- |   n < 0    reduce by production -n - 1
+-- | ```
+-- |
+-- | A number rather than a constructor, because of how many of these there
+-- | are. A table with a cell for every (state, terminal) pair is read by index
+-- | instead of searched, which is the whole point of an LR parser being a
+-- | table -- and a cell for every pair is affordable as a number and is not
+-- | affordable as an object. For a real grammar the difference is a table half
+-- | the size that answers in one read instead of a scan.
+-- |
+-- | Build them with the four below rather than by arithmetic.
+type Action = Int
 
-derive instance Eq Action
+-- | The token cannot appear here.
+errorAction :: Action
+errorAction = 0
 
-instance Show Action where
-  show = case _ of
-    Shift s -> "Shift " <> show s
-    Reduce p -> "Reduce " <> show p
-    Accept -> "Accept"
-    Error -> "Error"
+-- | The input is complete.
+acceptAction :: Action
+acceptAction = 1
+
+-- | Consume the lookahead and move to the given state.
+shift :: Int -> Action
+shift state = state + 2
+
+-- | Apply the production with the given index.
+reduce :: Int -> Action
+reduce production = negate production - 1
 
 -- | What the driver needs to know about a production in order to reduce by it.
 type ProductionInfo =
@@ -161,25 +183,36 @@ resume (Resume machine) tok = go machine.states machine.values
     case states of
       Nil -> Failed (errorAt machine 0 (Just tok))
       Cons state _ ->
-        case table.action state (table.terminalIndex tok) of
-          Shift next ->
+        let
+          code = table.action state (table.terminalIndex tok)
+        in
+          if code >= 2 then
             Await
               ( Resume
                   { table
-                  , states: Cons next states
+                  , states: Cons (code - 2) states
                   , values: Cons (table.terminalValue tok) values
                   , position: machine.position + 1
                   }
               )
-
-          Reduce p ->
+          else if code < 0 then
             let
-              info = table.production p
+              info = table.production (negate code - 1)
               -- The stack keeps the rightmost symbol at the head, so the
               -- arguments have to be flipped back into production order.
-              args =
-                Array.reverse
-                  (Array.fromFoldable (List.take info.arity values))
+              --
+              -- The two short cases are worth writing out. Most of the
+              -- productions of a real grammar take one symbol or none -- the
+              -- chains of `a -> b` that give an expression grammar its
+              -- precedence levels are all arity one -- and the general case
+              -- builds two arrays to hand over what is already at the head of
+              -- the stack.
+              args = case info.arity, values of
+                0, _ -> []
+                1, Cons v _ -> [ v ]
+                _, _ ->
+                  Array.reverse
+                    (Array.fromFoldable (List.take info.arity values))
               values' = List.drop info.arity values
               states' = List.drop info.arity states
             in
@@ -188,14 +221,12 @@ resume (Resume machine) tok = go machine.states machine.values
                 Cons under _ ->
                   go
                     (Cons (table.goto under info.lhs) states')
-                    (Cons (table.semanticAction p args) values')
-
-          Accept ->
+                    (Cons (table.semanticAction (negate code - 1) args) values')
+          else if code == 1 then
             case values of
               Nil -> Failed (errorAt machine state (Just tok))
               Cons v _ -> Done v
-
-          Error -> Failed (errorAt machine state (Just tok))
+          else Failed (errorAt machine state (Just tok))
 
 -- | The error a parser is owed when its supply of tokens runs out.
 -- |
@@ -229,7 +260,7 @@ errorAt m state found =
 expectedAt :: forall tok val. Table tok val -> Int -> Array String
 expectedAt table state =
   map table.terminalName
-    $ Array.filter (\t -> table.action state t /= Error)
+    $ Array.filter (\t -> table.action state t /= errorAction)
     $ Array.range 0 (table.terminalCount - 1)
 
 -- | Run the LR automaton over an array of tokens.

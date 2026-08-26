@@ -579,11 +579,16 @@ arrayBinding name entries = case Array.uncons entries of
 -- The tables
 --------------------------------------------------------------------------------
 
+-- | One action-table cell, in the encoding `Puppy.Runtime.Action` describes.
+-- |
+-- | Written out as the number rather than as a call to `shift` or `reduce`,
+-- | because there is one of these for every state and terminal and the numbers
+-- | are what makes a table that size affordable to write and to read.
 renderRuntimeAction :: Action -> String
 renderRuntimeAction = case _ of
-  Shift target -> "Puppy.Runtime.Shift " <> show target
-  Reduce production -> "Puppy.Runtime.Reduce " <> show production
-  Accept -> "Puppy.Runtime.Accept"
+  Shift target -> show (target + 2)
+  Reduce production -> show (negate production - 1)
+  Accept -> "1"
 
 productionTable :: Input -> Emitter -> Emitter
 productionTable input = Emit.write
@@ -672,23 +677,48 @@ rowsByState count stateOf render cells =
     (stateOf (fst entry))
     acc
 
+-- | The action table, with a cell for every state and terminal.
+-- |
+-- | Dense, and flat: one array of numbers, read at `state * width + terminal`.
+-- | A sparse table has fewer cells and is not smaller -- a cell that has to say
+-- | which terminal it belongs to costs more to write than the empty cells it
+-- | saves -- and it has to be searched, which is the one thing being a table is
+-- | supposed to avoid.
 actionTable :: Input -> Emitter -> Emitter
 actionTable input = Emit.write
-  ( sparseTable "actionRows" "{ on :: Int, take :: Puppy.Runtime.Action }" rows
-      <> "\nactionAt :: Int -> Int -> Puppy.Runtime.Action\nactionAt puppyState puppyTerminal = case Puppy.Deps.index actionRows puppyState of\n"
-      <> line 2 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError"
-      <> line 4 ("(" <> quoted "no action row for state " <> " <> show puppyState)")
-      <> line 2 "Puppy.Deps.Just puppyRow -> case Puppy.Deps.find (\\puppyEntry -> puppyEntry.on == puppyTerminal) puppyRow of"
-      <> line 4 "Puppy.Deps.Just puppyEntry -> puppyEntry.take"
-      <> line 4 "Puppy.Deps.Nothing -> Puppy.Runtime.Error"
+  ( "\nactionTable :: Array Int\n"
+      <> arrayBinding "actionTable" cells
+      <> "\nactionWidth :: Int\nactionWidth = "
+      <> show width
+      <> "\n"
+      <> "\nactionAt :: Int -> Int -> Puppy.Runtime.Action\nactionAt puppyState puppyTerminal =\n"
+      -- A terminal number past the end of the alphabet is not a mistake: it is
+      -- what classifying a token the grammar never declared produces, and it
+      -- has to mean the token is an error here. Reaching for the cell without
+      -- looking would reach one place further along, which in a flat table is
+      -- the first cell of the next state -- an answer belonging to a state the
+      -- parser is not in.
+      <> line 2 "if puppyTerminal < 0 || puppyTerminal >= actionWidth then"
+      <> line 4 "Puppy.Runtime.errorAction"
+      <> line 2 "else"
+      <> line 4 "case Puppy.Deps.index actionTable (puppyState * actionWidth + puppyTerminal) of"
+      <> line 6 "Puppy.Deps.Just puppyCode -> puppyCode"
+      <> line 6 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError"
+      <> line 8 ("(" <> quoted "no action for state " <> " <> show puppyState)")
   )
   where
-  rows = rowsByState (Array.length input.automaton.states) _.state entry
-    input.table.action
+  width = Array.length input.grammar.terminals
 
-  entry (Tuple cell action) = "{ on: " <> show cell.terminal <> ", take: "
-    <> renderRuntimeAction action
-    <> " }"
+  states = Array.length input.automaton.states
+
+  cells = do
+    state <- range states
+    terminal <- range width
+    pure case Map.lookup { state, terminal } input.table.action of
+      Just action -> renderRuntimeAction action
+      Nothing -> "0"
+
+  range n = if n <= 0 then [] else Array.range 0 (n - 1)
 
 gotoTable :: Input -> Emitter -> Emitter
 gotoTable input = Emit.write

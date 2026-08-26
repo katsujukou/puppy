@@ -267,6 +267,28 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     -- The token type holds constructors this grammar has no opinion about, and
     -- a lexer is entitled to produce one. What comes back is a syntax error
     -- like any other, naming the token it could not use.
+    -- Every state, not just the ones that happen to be safe. A terminal number
+    -- past the end of the alphabet is what an undeclared token becomes, and a
+    -- table read by index has to refuse it rather than read whatever sits one
+    -- place further on -- which is the first cell of the next state.
+    it "refuses an undeclared token wherever it turns up" do
+      let
+        undeclared = T.At 9 T.Space
+        valid =
+          [ T.At 0 (T.Number 1)
+          , T.At 2 T.Plus
+          , T.At 4 (T.Number 2)
+          , T.At 6 T.Times
+          , T.At 8 (T.Number 3)
+          ]
+        at i = External.total
+          (Array.take i valid <> [ undeclared ] <> Array.drop i valid)
+      -- The position is what says the token was refused where it stands. A
+      -- cell read from the wrong state could shift it and fail somewhere
+      -- later, which `Left` on its own would not tell apart.
+      map (map _.position <<< leftOf <<< at) (Array.range 0 (Array.length valid))
+        `shouldEqual` map Just (Array.range 0 (Array.length valid))
+
     it "makes a token it never declared an ordinary syntax error" do
       External.total [ T.At 0 (T.Number 1), T.At 2 T.Space ]
         `shouldEqual` Left
