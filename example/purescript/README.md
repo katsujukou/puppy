@@ -61,9 +61,9 @@ is measured on its own as well.
 
 | file | lex | puppy | language-cst-parser |
 | --- | ---: | ---: | ---: |
-| `Codegen.purs` (38 KB) | 7.6ms | 18.5ms | 14.9ms |
-| `Expand.purs` (35 KB) | 7.7ms | 18.3ms | 14.7ms |
-| `Driver.purs` (12 KB) | 1.6ms | 3.6ms | 2.9ms |
+| `Codegen.purs` (38 KB) | 7.7ms | 16.3ms | 14.8ms |
+| `Expand.purs` (35 KB) | 7.6ms | 16.3ms | 15.3ms |
+| `Driver.purs` (12 KB) | 1.6ms | 3.2ms | 2.8ms |
 
 Best of ten samples. A sample is however many repetitions come to at least
 200ms, divided back down: `Date.now` counts whole milliseconds, and a single
@@ -73,14 +73,21 @@ from measuring rather than estimating -- twice, so that the count is settled on
 warm code rather than on the cold run -- and the benchmark prints the shortest
 sample it took, so that the floor can be seen to have held.
 
-End to end Puppy takes about a quarter longer. Taking the lexer out — which is
-approximate, since the two hold the tokens differently — the parsing itself is
-roughly 10.8ms against 7.2ms on the larger files, about half as long again.
+End to end Puppy takes about a tenth longer. Taking the lexer out -- which is
+approximate, since the two hold the tokens differently -- the parsing itself is
+roughly 8.6ms against 7.2ms on the larger files, about a fifth longer.
+
+It was half as long again until recently, and what closed most of the gap was
+not the algorithm. `resume` worked out which terminal the lookahead was on
+every pass of its reduction loop, and a grammar with levels in it goes round
+that loop half a dozen times per token; asking once instead took a fifth off
+the parsing. Which is worth saying because it is the kind of thing that is left
+in a young implementation and not the kind of thing that is inherent to LR.
 
 Two things to hold against that, in opposite directions. The tree here is
 smaller: `PureScript.CST` keeps every token it read, comments and all, because
 a formatter has to put the source back, and this one keeps names, shapes and
-positions. So Puppy is doing less work for that half. On the other hand a
+positions. So Puppy is doing less work for that fifth. On the other hand a
 generated table-driven parser landing in the same range as a hand-written
 combinator parser that has been tuned for years is closer than the shape of the
 two would suggest.

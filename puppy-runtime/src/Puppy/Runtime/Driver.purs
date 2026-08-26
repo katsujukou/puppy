@@ -179,12 +179,22 @@ resume (Resume machine) tok = go machine.states machine.values
   where
   table = machine.table
 
+  -- Which terminal the token is, worked out once.
+  --
+  -- The loop below runs a reduction and comes round again on the same
+  -- lookahead, and a grammar with levels in it -- an expression grammar, say,
+  -- where an atom climbs half a dozen rules before anything shifts -- comes
+  -- round many times per token. Asking again each time would be asking a
+  -- question that cannot have changed its answer, and where the token type is
+  -- the author's the asking is a walk down every pattern they wrote.
+  terminal = table.terminalIndex tok
+
   go states values =
     case states of
       Nil -> Failed (errorAt machine 0 (Just tok))
       Cons state _ ->
         let
-          code = table.action state (table.terminalIndex tok)
+          code = table.action state terminal
         in
           if code >= 2 then
             Await
