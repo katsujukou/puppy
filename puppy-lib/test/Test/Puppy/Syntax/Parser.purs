@@ -10,6 +10,7 @@ import Effect.Aff (Aff)
 import Data.String.Common (joinWith)
 import Puppy.Syntax
   ( Associativity(..)
+  , ConflictDirective(..)
   , Grammar
   , Production
   , Rule
@@ -113,6 +114,17 @@ shouldRejectWith needle source = case parse source of
         <> ", got: "
         <> err.message
 
+-- | A rejection that has to point at a particular place, not just say a
+-- | particular thing.
+rejectionAt :: String -> { line :: Int, column :: Int } -> String -> Aff Unit
+rejectionAt needle at source = case parse source of
+  Right _ -> fail ("expected a parse error mentioning " <> show needle)
+  Left err -> do
+    when (not (contains (Pattern needle) err.message)) do
+      fail ("expected an error mentioning " <> show needle <> ", got: " <> err.message)
+    { line: err.span.start.line, column: err.span.start.column }
+      `shouldEqual` at
+
 spec :: Spec Unit
 spec = describe "Puppy.Syntax.Parser" do
   describe "declarations" do
@@ -203,8 +215,30 @@ spec = describe "Puppy.Syntax.Parser" do
     it "records a %prec override on the production that carries it" do
       withGrammar \g -> case ruleNamed "expr" g of
         Nothing -> fail "expected a rule named `expr`"
-        Just r -> map _.precedence r.productions
-          `shouldEqual` [ Nothing, Nothing, Nothing, Just "UMINUS" ]
+        Just r -> map _.directive r.productions
+          `shouldEqual` [ Inferred, Inferred, Inferred, Prec "UMINUS" ]
+
+    it "records a `%shift` the same way" do
+      case parse "%token A T\n%start { X } main\n%%\nmain: | A %shift { 1 } | T { 2 }\n" of
+        Left err -> fail ("failed to parse: " <> err.message)
+        Right g -> case ruleNamed "main" g of
+          Nothing -> fail "expected a rule named `main`"
+          Just r -> map _.directive r.productions
+            `shouldEqual` [ PreferShift, Inferred ]
+
+    -- One asks for a precedence and the other asks for the production to have
+    -- none, so a production carrying both has not said what it wants.
+    --
+    -- The column is checked as well as the message: the complaint belongs on
+    -- the second of the two, which is the one that cannot be there. Pointing
+    -- at the first would send whoever reads it to a directive that is fine.
+    it "rejects a production carrying both `%prec` and `%shift`" do
+      rejectionAt "not both" { line: 5, column: 19 }
+        "%token A P\n%start { X } main\n%left P\n%%\nmain: | A %prec P %shift { 1 }\n"
+
+    it "rejects them the other way round too" do
+      rejectionAt "not both" { line: 5, column: 18 }
+        "%token A P\n%start { X } main\n%left P\n%%\nmain: | A %shift %prec P { 1 }\n"
 
     it "keeps each semantic action verbatim" do
       withGrammar \g -> case ruleNamed "expr" g of

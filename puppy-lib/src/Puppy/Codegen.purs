@@ -570,7 +570,7 @@ asCore :: Input -> Prod -> Core.Production
 asCore input p =
   { lhs: fromMaybe "?" (Array.index input.grammar.nonterminals p.lhs)
   , rhs: map named p.rhs
-  , precedence: Nothing
+  , directive: Syntax.Inferred
   , action: Core.Action { bindings: [], code: { text: "", span: p.span } }
   , span: p.span
   }

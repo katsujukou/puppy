@@ -49,6 +49,7 @@ import Puppy.LR.Table
   , Table
   , unresolved
   )
+import Puppy.Syntax (ConflictDirective(..))
 
 --------------------------------------------------------------------------------
 -- Everything that is the same for every conflict
@@ -260,17 +261,19 @@ explainWith g automaton ctx conflict = case conflict.kind of
 
   verdict v = "      " <> withPrec v.production <> "\n          " <> case v.prefers of
     PrefersShift -> "its precedence prefers the shift"
+    MarkedShift -> "it is marked `%shift`"
     PrefersReduce -> "its precedence prefers this reduction"
     PrefersError -> "its precedence makes the token an error here"
     NoPreference -> "it has no precedence"
 
-  -- The `%prec` is what tells two otherwise identical productions apart, which
-  -- is exactly the situation a disputed cell tends to be.
+  -- What a production wrote is what tells two otherwise identical ones apart,
+  -- which is exactly the situation a disputed cell tends to be.
   withPrec production = whole g production <> case declared of
-    Nothing -> ""
-    Just t -> " %prec " <> symbolName g (T t)
+    Just (Prec t) -> " %prec " <> symbolName g (T t)
+    Just PreferShift -> " %shift"
+    _ -> ""
     where
-    declared = Array.index g.productions production >>= _.precedence
+    declared = map _.directive (Array.index g.productions production)
 
   shifted terminal = case shiftingItem g automaton conflict.state terminal of
     Just item -> dotted g item.production item.dot
@@ -279,6 +282,8 @@ explainWith g automaton ctx conflict = case conflict.kind of
   outcome = case conflict.resolution of
     ByPrecedence action ->
       "Settled by precedence: the parser will " <> describe action <> "."
+    ByShift ->
+      "Settled by `%shift` on the production: the parser will shift the token."
     ByNonassoc ->
       "The token is declared `%nonassoc`, so it is a parse error here."
     ByDefault action ->
@@ -298,7 +303,7 @@ explainWith g automaton ctx conflict = case conflict.kind of
     Disputed _ ->
       "Precedences that agree -- or the same `%prec` on each -- would settle it."
     ShiftReduce _ ->
-      "Declaring `%left`, `%right` or `%nonassoc` for the token, or `%prec` on\n  the production, would settle it deliberately."
+      "`%shift` on the production says to prefer the shift, which is what will\n  happen anyway -- writing it makes that the grammar's decision rather than a\n  rule of thumb. Declaring `%left`, `%right` or `%nonassoc` for the token, or\n  `%prec` on the production, would settle it by precedence instead."
     ReduceReduce _ ->
       "Precedence cannot settle a reduce/reduce conflict. Two rules matching the\n  same input usually means the grammar says something other than what was\n  meant."
     AcceptReduce _ ->

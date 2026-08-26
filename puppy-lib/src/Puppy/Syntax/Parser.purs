@@ -26,6 +26,7 @@ import Data.Traversable (traverse)
 import Puppy.Syntax
   ( Associativity(..)
   , Code
+  , ConflictDirective(..)
   , Element
   , Grammar
   , Pos
@@ -469,14 +470,14 @@ production :: Parser Production
 production = do
   start <- current
   elements <- productionElements Nil
-  precedence <- precedenceOverride
+  directive <- conflictDirective
   t <- current
   case t.token of
     TBraced braced -> do
       advance
       pure
         { elements
-        , precedence
+        , directive
         , action: braced.code
         , span: { start: start.span.start, end: t.span.end }
         }
@@ -484,15 +485,37 @@ production = do
       ("expected a `{ ... }` semantic action, found " <> describe t.token)
       t.span
   where
-  precedenceOverride = do
+  -- `%prec TOKEN` or `%shift`, and not both: one asks for a precedence and the
+  -- other asks for the production to have none, so a production carrying both
+  -- has not said what it wants.
+  conflictDirective = do
     t <- current
     case t.token of
       TKeyword "prec" -> do
         advance
         tok <- identifier "a token name after `%prec`"
         checkNotReserved tok.name tok.span "used with `%prec`"
-        pure (Just tok.name)
-      _ -> pure Nothing
+        refuseBoth "shift" "`%prec`"
+        pure (Prec tok.name)
+      TKeyword "shift" -> do
+        advance
+        refuseBoth "prec" "`%shift`"
+        pure PreferShift
+      _ -> pure Inferred
+
+  -- The span is the second one's, not the first's: the first was fine on its
+  -- own and the one being read now is the one that cannot be there.
+  refuseBoth keyword already = do
+    t <- current
+    case t.token of
+      TKeyword k | k == keyword ->
+        fatal
+          ( "a production may carry `%prec` or `%shift`, not both; "
+              <> already
+              <> " is already here"
+          )
+          t.span
+      _ -> pure unit
 
 productionElements :: List Element -> Parser (Array Element)
 productionElements seed =

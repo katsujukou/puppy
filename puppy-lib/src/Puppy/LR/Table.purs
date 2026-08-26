@@ -37,7 +37,7 @@ import Data.Tuple (Tuple(..))
 import Puppy.LR.Automaton (Automaton)
 import Puppy.LR.Grammar (LRGrammar, Precedence, Sym(..))
 import Puppy.LR.Item (Item)
-import Puppy.Syntax (Associativity(..))
+import Puppy.Syntax (Associativity(..), ConflictDirective(..))
 
 data Action
   = Shift Int
@@ -60,6 +60,10 @@ type GotoCell = { state :: Int, nonterminal :: Int }
 -- | What one production's precedence has to say about meeting the shift.
 data Preference
   = PrefersShift
+  | MarkedShift
+  -- ^ `%shift`, which is a preference for the shift without being a
+  -- precedence. Kept apart from the one above so that a report can say which
+  -- of the two the production actually wrote.
   | PrefersReduce
   | PrefersError
   | NoPreference
@@ -69,6 +73,7 @@ derive instance Eq Preference
 instance Show Preference where
   show = case _ of
     PrefersShift -> "PrefersShift"
+    MarkedShift -> "MarkedShift"
     PrefersReduce -> "PrefersReduce"
     PrefersError -> "PrefersError"
     NoPreference -> "NoPreference"
@@ -100,6 +105,10 @@ data Resolution
   = ByPrecedence Action
   -- ^ A `%left`, `%right` or `%prec` said which one wins. The grammar asked
   -- for this, so it is not something to warn about.
+  | ByShift
+  -- ^ `%shift` on the reducing production said the shift wins. Deliberate in
+  -- the same way, and kept apart from the one above so that a report does not
+  -- claim a precedence settled something no precedence was involved in.
   | ByNonassoc
   -- ^ `%nonassoc`: neither wins and the token becomes a parse error here,
   -- which is also what the grammar asked for.
@@ -114,6 +123,7 @@ derive instance Eq Resolution
 instance Show Resolution where
   show = case _ of
     ByPrecedence a -> "(ByPrecedence " <> show a <> ")"
+    ByShift -> "ByShift"
     ByNonassoc -> "ByNonassoc"
     ByDefault a -> "(ByDefault " <> show a <> ")"
 
@@ -148,12 +158,18 @@ unresolved table = Array.filter byDefault table.conflicts
 -- | A production's precedence is the one it was given by `%prec`, or failing
 -- | that the one belonging to its last terminal -- the token whose arrival
 -- | would be the last thing the production is still waiting for.
+-- |
+-- | A production marked `%shift` has none, which is what asking to lose every
+-- | shift/reduce conflict amounts to. Nothing consults this for one of those,
+-- | since `decide` answers for them before it gets here, but a report that
+-- | names a production's precedence should not name one it does not have.
 productionPrecedence :: LRGrammar -> Int -> Maybe Precedence
 productionPrecedence g production = do
   prod <- Array.index g.productions production
-  terminal <- case prod.precedence of
-    Just t -> Just t
-    Nothing -> lastTerminal prod.rhs
+  terminal <- case prod.directive of
+    Prec t -> Just t
+    Inferred -> lastTerminal prod.rhs
+    PreferShift -> Nothing
   Map.lookup terminal g.precedence
 
 lastTerminal :: Array Sym -> Maybe Int
@@ -226,6 +242,10 @@ type Settlement =
 -- | Which of a shift and one reduce the grammar says should win, if it says.
 data Winner
   = ShiftWins
+  -- ^ The precedence declarations say the shift.
+  | ShiftPreferred
+  -- ^ `%shift` on the production says the shift, without a precedence being
+  -- involved at all.
   | ReduceWins Int
   | ErrorHere
   | Undecided
@@ -234,16 +254,21 @@ derive instance Eq Winner
 
 -- | What the grammar has to say about a shift and one particular reduce.
 decide :: LRGrammar -> Int -> Int -> Winner
-decide g terminal production =
-  case Map.lookup terminal g.precedence, productionPrecedence g production of
-    Just token, Just rule
-      | rule.level > token.level -> ReduceWins production
-      | rule.level < token.level -> ShiftWins
-      | otherwise -> case token.associativity of
-          AssocLeft -> ReduceWins production
-          AssocRight -> ShiftWins
-          AssocNone -> ErrorHere
-    _, _ -> Undecided
+decide g terminal production = case directiveOf g production of
+  Just PreferShift -> ShiftPreferred
+  _ ->
+    case Map.lookup terminal g.precedence, productionPrecedence g production of
+      Just token, Just rule
+        | rule.level > token.level -> ReduceWins production
+        | rule.level < token.level -> ShiftWins
+        | otherwise -> case token.associativity of
+            AssocLeft -> ReduceWins production
+            AssocRight -> ShiftWins
+            AssocNone -> ErrorHere
+      _, _ -> Undecided
+
+directiveOf :: LRGrammar -> Int -> Maybe (ConflictDirective Int)
+directiveOf g production = map _.directive (Array.index g.productions production)
 
 -- | Decide one cell, given everything that wanted it.
 -- |
@@ -295,6 +320,25 @@ settle g cell candidates =
 
         everyReduce = Array.all isReduceWins outcomes
 
+        anyPreferShift = Array.any (_ == ShiftPreferred) outcomes
+
+        -- A production that asked to lose, one whose precedence loses, and one
+        -- that said nothing all want the same cell to be the shift. They can
+        -- sit in a cell together without disagreeing.
+        wantsShift = case _ of
+          ShiftWins -> true
+          ShiftPreferred -> true
+          Undecided -> true
+          ReduceWins _ -> false
+          ErrorHere -> false
+
+        -- Why this particular production lost, which is not the same answer
+        -- for all of them.
+        resolutionOf = case _ of
+          ShiftPreferred -> ByShift
+          ShiftWins -> ByPrecedence (Shift target)
+          _ -> ByDefault (Shift target)
+
         onlyShifts resolution action =
           { action
           , conflicts: map (shiftReduce target resolution) ordered
@@ -313,6 +357,19 @@ settle g cell candidates =
             { action: Just (Reduce kept)
             , conflicts: map (reduceReduce kept (ByDefault (Reduce kept))) rest
             }
+        else if anyPreferShift && Array.all wantsShift outcomes then
+          -- At least one production asked to lose to the shift, and nothing
+          -- here asked for anything else. The cell is the shift, and each
+          -- conflict says whether that was asked for or assumed -- so a
+          -- production that said nothing is still reported, rather than being
+          -- covered by its neighbour's `%shift`.
+          { action: Just (Shift target)
+          , conflicts:
+              Array.zipWith
+                (\p o -> shiftReduce target (resolutionOf o) p)
+                ordered
+                outcomes
+          }
         else if every Undecided then
           -- Nothing in the grammar speaks. They all lose to the shift by the
           -- same rule of thumb, so they never compete with each other either.
@@ -354,6 +411,7 @@ settle g cell candidates =
 
   preference = case _ of
     ShiftWins -> PrefersShift
+    ShiftPreferred -> MarkedShift
     ReduceWins _ -> PrefersReduce
     ErrorHere -> PrefersError
     Undecided -> NoPreference

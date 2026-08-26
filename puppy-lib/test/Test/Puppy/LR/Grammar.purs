@@ -12,6 +12,7 @@ import Effect.Aff (Aff)
 import Puppy.Expand (expand)
 import Puppy.LR.Analysis (Analysis, analyse, firstOf)
 import Puppy.LR.Grammar (LRGrammar, number, renderProd)
+import Puppy.Syntax (ConflictDirective(..))
 import Puppy.Syntax.Parser as Parser
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
@@ -99,8 +100,8 @@ spec = do
 
     it "resolves %prec to a terminal number" do
       withGrammar arithmetic \g ->
-        map _.precedence g.productions `shouldEqual`
-          [ Nothing, Nothing, Nothing, Just 1, Nothing ]
+        map _.directive g.productions `shouldEqual`
+          [ Inferred, Inferred, Inferred, Prec 1, Inferred ]
 
     it "keeps a link back to the production a semantic action came from" do
       withGrammar arithmetic \g ->

@@ -4,12 +4,12 @@ import Prelude
 
 import Data.Array as Array
 import Data.Either (Either(..))
-import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), contains)
 import Data.String.Common (joinWith)
 import Effect.Aff (Aff)
 import Puppy.Expand (expand)
 import Puppy.Grammar (Action(..), Bound(..), Grammar, renderProduction)
+import Puppy.Syntax (ConflictDirective(..))
 import Puppy.Syntax.Parser as Parser
 import Test.Spec (Spec, describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
@@ -242,7 +242,7 @@ main: | x = outer { x }
         `shouldEqual` Right [ "{x={y={a=0| Leaf a }| Wrap y }| x }" ]
 
     it "carries a %prec from the inlined rule to the production it lands in" do
-      map (map _.precedence <<< _.productions)
+      map (map _.directive <<< _.productions)
         ( expanded
             """
 %token A P
@@ -253,7 +253,48 @@ main: | x = inl { x }
 %inline inl: | A %prec P { 1 }
 """
         )
-        `shouldEqual` Right [ Just "P" ]
+        `shouldEqual` Right [ Prec "P" ]
+
+    it "carries a `%shift` from the inlined rule the same way" do
+      map (map _.directive <<< _.productions)
+        ( expanded
+            """
+%token A
+%start { X } main
+%%
+main: | x = inl { x }
+%inline inl: | A %shift { 1 }
+"""
+        )
+        `shouldEqual` Right [ PreferShift ]
+
+    -- What the use site said wins, exactly as it does for `%prec`.
+    it "lets the use site keep its own directive over the inlined one" do
+      map (map _.directive <<< _.productions)
+        ( expanded
+            """
+%token A P
+%start { X } main
+%left P
+%%
+main: | x = inl %prec P { x }
+%inline inl: | A %shift { 1 }
+"""
+        )
+        `shouldEqual` Right [ Prec "P" ]
+
+    it "gives every instance of a parameterised rule the directive it was written with" do
+      map (map _.directive <<< _.productions)
+        ( expanded
+            """
+%token A B
+%start { X } main
+%%
+main: | x = one(A) y = one(B) { x }
+one(t): | t %shift { 1 }
+"""
+        )
+        `shouldEqual` Right [ Inferred, PreferShift, PreferShift ]
 
     it "rejects an inline rule that reaches itself" do
       shouldFailWith "reaches itself"

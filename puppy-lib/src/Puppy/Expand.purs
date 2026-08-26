@@ -40,7 +40,7 @@ import Data.Tuple (Tuple(..))
 import Puppy.Grammar (Action(..), Bound(..), Production, Symbol(..))
 import Puppy.Grammar as Grammar
 import Puppy.Names as Names
-import Puppy.Syntax (Pos, Span, SymbolRef(..))
+import Puppy.Syntax (ConflictDirective(..), Pos, Span, SymbolRef(..))
 import Puppy.Syntax as Syntax
 
 type ExpandError = { message :: String, span :: Span }
@@ -470,16 +470,15 @@ validateProduction env params prod = Array.concat
           }
         ]
 
-  precErrors = case prod.precedence of
-    Nothing -> []
-    Just name
-      | Set.member name env.terminals -> []
-      | otherwise ->
+  precErrors = case prod.directive of
+    Prec name
+      | not (Set.member name env.terminals) ->
           [ { message: "`%prec " <> name
                 <> "` does not name a declared token"
             , span: prod.span
             }
           ]
+    _ -> []
 
 -- | Check that a reference names something that exists.
 -- |
@@ -597,7 +596,7 @@ instantiateProduction env subst lhs sp = do
     { production:
         { lhs
         , rhs: map _.symbol resolved
-        , precedence: sp.precedence
+        , directive: sp.directive
         , action: Action { bindings, code: sp.action }
         , span: sp.span
         }
@@ -700,9 +699,12 @@ inlineAt :: Int -> Production -> Production -> Production
 inlineAt at outer inner = outer
   { rhs =
       Array.slice 0 at outer.rhs <> inner.rhs <> Array.drop (at + 1) outer.rhs
-  , precedence = case outer.precedence of
-      Just p -> Just p
-      Nothing -> inner.precedence
+  -- The same rule `%prec` has always followed here, and `%shift` follows it
+  -- too: what the use site said about a conflict wins, and an inlined rule
+  -- lends what it said to a use site that said nothing.
+  , directive = case outer.directive of
+      Inferred -> inner.directive
+      settled -> settled
   , action = mapStack replace outer.action
   }
   where

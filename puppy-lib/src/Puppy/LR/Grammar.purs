@@ -31,7 +31,7 @@ import Data.Tuple (Tuple(..))
 import Puppy.Grammar (Symbol(..))
 import Puppy.Grammar as Core
 import Data.Map (Map)
-import Puppy.Syntax (Associativity, Span, eofToken)
+import Puppy.Syntax (Associativity, ConflictDirective(..), Span, eofToken)
 import Puppy.Syntax as Syntax
 
 data Sym
@@ -53,8 +53,9 @@ type Prod =
   -- ^ Which of the core grammar's productions this came from, and so where its
   -- semantic action lives. `Nothing` for the productions added below to give
   -- each start symbol something to be reduced by.
-  , precedence :: Maybe Int
-  -- ^ The terminal named by `%prec`, resolved.
+  , directive :: ConflictDirective Int
+  -- ^ What the production said about its conflicts, with the terminal `%prec`
+  -- named resolved to its number.
   , span :: Span
   }
 
@@ -163,10 +164,11 @@ number core = do
   convert (Tuple i p) = do
     lhs <- require nonterminalIndex p.lhs "nonterminal" p.span
     rhs <- traverse (toSym p.span) p.rhs
-    prec <- traverse
-      (\t -> require terminalIndex t "token" p.span)
-      p.precedence
-    pure { lhs, rhs, source: Just i, precedence: prec, span: p.span }
+    directive <- case p.directive of
+      Inferred -> Right Inferred
+      PreferShift -> Right PreferShift
+      Prec t -> map Prec (require terminalIndex t "token" p.span)
+    pure { lhs, rhs, source: Just i, directive, span: p.span }
 
   toSym span = case _ of
     Terminal t -> T <$> require terminalIndex t "token" span
@@ -194,7 +196,7 @@ number core = do
           { lhs: nonterminal
           , rhs: [ N symbol ]
           , source: Nothing
-          , precedence: Nothing
+          , directive: Inferred
           , span: s.span
           }
       , start: { name: s.symbol, symbol, production: 0 }

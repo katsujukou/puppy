@@ -26,6 +26,7 @@ import Data.Maybe (Maybe)
 import Data.String.Common (joinWith)
 import Puppy.Syntax
   ( Code
+  , ConflictDirective
   , DeriveDecl
   , PrecedenceDecl
   , Span
@@ -92,8 +93,9 @@ instance Show Bound where
 type Production =
   { lhs :: String
   , rhs :: Array Symbol
-  , precedence :: Maybe String
-  -- ^ The token named by `%prec`, if the production carried one.
+  , directive :: ConflictDirective String
+  -- ^ What the production said about the conflicts it takes part in, which
+  -- survives instantiation and inlining the same way its span does.
   , action :: Action
   , span :: Span
   -- ^ Where the production this came from was written, which survives both

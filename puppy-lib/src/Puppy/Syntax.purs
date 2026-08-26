@@ -14,6 +14,7 @@
 -- | is an abstract syntax tree, and comments and whitespace are not kept.
 module Puppy.Syntax
   ( Pos
+  , ConflictDirective(..)
   , Span
   , Code
   , Associativity(..)
@@ -204,10 +205,37 @@ type Element =
   , span :: Span
   }
 
+-- | What a production says about the conflicts it takes part in.
+-- |
+-- | The three are exclusive by construction rather than by convention. A
+-- | production annotated both `%prec` and `%shift` would be asking for a
+-- | precedence and for its precedence to be ignored, so the parser refuses it
+-- | and nothing downstream has to decide which of the two it meant.
+data ConflictDirective a
+  = Inferred
+  -- ^ Nothing was written. A production takes the precedence of its last
+  -- terminal, and settles a conflict only if that terminal has one.
+  | Prec a
+  -- ^ `%prec TOKEN`: take that token's precedence instead.
+  | PreferShift
+
+-- ^ `%shift`: lose every shift/reduce conflict this production is in, so that
+-- the shift wins deliberately rather than by the rule of thumb. Says nothing
+-- about reduce/reduce, where there is no shift to prefer.
+
+derive instance Eq a => Eq (ConflictDirective a)
+
+derive instance Functor ConflictDirective
+
+instance Show a => Show (ConflictDirective a) where
+  show = case _ of
+    Inferred -> "Inferred"
+    Prec a -> "(Prec " <> show a <> ")"
+    PreferShift -> "PreferShift"
+
 type Production =
   { elements :: Array Element
-  , precedence :: Maybe String
-  -- ^ The token named by `%prec`, overriding the production's own precedence.
+  , directive :: ConflictDirective String
   , action :: Code
   , span :: Span
   }
