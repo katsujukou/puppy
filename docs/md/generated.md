@@ -107,6 +107,13 @@ demand made of `m` — the loop is as long as the input, and it has to be a loop
 and every monad named here has it. There is a whole one
 [below](#one-token-at-a-time).
 
+A source that pushes rather than being asked — a stream's `data` event, a
+socket, anything that calls you — fits by putting a queue between the two. In
+`Aff` that is an `AVar`: the handler puts a token in, `expressionFrom` takes
+one out, and because a put waits until it is taken, the queue cannot outrun the
+parser and the hand-off stays one token wide. There is no separate push-shaped
+entry point, and this is why.
+
 ### What this saves, and what it does not
 
 The array goes away: neither the token array nor the copy of it the parser
@@ -165,6 +172,32 @@ report.
 `expected` is the approximation every LR parser reports: it can name a token
 that a later reduction would have rejected, but it never leaves out one that
 would have worked.
+
+### Where in the file that was
+
+`position` counts tokens, and the tokens it counts are the ones the parser was
+given. That is an index into your array when you passed an array and nothing
+came between. It is not one when something did: a pass that drops comments
+makes the count smaller than the text, and one that marks out blocks makes it
+larger, and after either, `position` is a number about the parser's input
+rather than about anything anyone wrote.
+
+So a message that names a line and a column gets them from the token, not from
+`position`, which means the token has to carry them:
+
+```purescript
+data Token = At Pos Lexeme
+```
+
+Under [`%tokentype`](grammar.md#tokentype) that is a type you already own, and
+`found` hands one back. A generated token type can carry a position too —
+`%token { Pos } IDENT` — but a payload is one type per token, so a position on
+every token means saying so on every token, and the external route is usually
+easier for a language of any size.
+
+`found` is `Nothing` only at the true end of the input. An error reported
+against a token some pass invented, rather than one the text contains, is
+`Just` a token whose position was invented with it.
 
 ## What your package must depend on
 
@@ -296,6 +329,68 @@ calculate input =
 Notice where the lexer's complaint went. It never became a parse error, because
 it is not one — the parser has no opinion about a character it was never shown
 — and `ExceptT` carried it out on its own.
+
+### A pass in between
+
+Some things a lexer produces are not what a parser should be given. Comments go
+in the bin. An offside rule turns indentation into the block markers a grammar
+can match, and a token that ends three blocks at once has three of those to
+hand over before it is itself handed over.
+
+Neither is one token in, one token out, and the entry point asks for one token
+at a time. What holds the rest until they are asked for is state, so that is
+what the combinator for this takes:
+
+```purescript
+import Puppy.Runtime.Source (SourceState, initial, transduce)
+```
+
+```purescript
+transduce
+  :: forall m s raw tok
+   . MonadRec m
+  => (s -> Maybe raw -> Tuple s (Array tok))
+  -> m (Maybe raw)
+  -> StateT (SourceState s tok) m (Maybe tok)
+```
+
+You write the step: given your pass's state and one token from the lexer, the
+state to go on with and the tokens that one produced — none, one, or several.
+`transduce` does the rest, and what it gives back is a source in the shape
+`expressionFrom` wants.
+
+```purescript
+State.evalStateT
+  (expressionFrom (transduce insertLayout nextToken))
+  (initial emptyStack)
+```
+
+End of input is passed on rather than swallowed: when your lexer answers
+`Nothing`, the step function is called with `Nothing` — once — and may produce
+a last batch. A layout pass closes its open blocks there. Only when that batch
+has been handed over does the parser hear that the input has ended.
+
+`StateT` rather than a source that keeps its state to itself: there is nowhere
+in an arbitrary `m` to put a queue between two calls. `Effect` has `Ref` and
+`Either` has nothing, and a combinator that worked only for some monads would
+be the wrong shape for an entry point that asks for `MonadRec` and no more.
+
+`SourceState` is opaque. What it holds is your pass's state and the tokens it
+has produced that the parser has not asked for yet, and `initial` is the only
+way to make one — the order the queue comes out in, and the promise that a
+source which has ended is not asked again, are not things a caller should be
+able to reach in and change.
+
+This is plumbing and not a layout algorithm. Puppy does not lex, and writing
+the rule is yours; what is here is so that writing it is writing the rule
+rather than the queue.
+
+It also does not reach every offside language. A pass over the token stream can
+apply a layout rule that the tokens themselves settle, which is what
+PureScript's rule is — its compiler inserts the block markers before parsing,
+not during. Haskell's rule is not: it ends a block when the parser turns out
+not to be able to accept a token, and nothing that has only seen the tokens can
+answer that. If your language needs that rule, this is not enough on its own.
 
 ## Do not edit it
 
