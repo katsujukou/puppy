@@ -323,6 +323,39 @@ bind more tightly than the binary one it shares a token with.
 
 The named token must be declared.
 
+### `%shift`
+
+```plain
+stmt:
+  | IF c = expr THEN a = stmt %shift        { If c a }
+  | IF c = expr THEN a = stmt ELSE b = stmt { IfElse c a b }
+```
+
+An alternative marked `%shift` loses every shift/reduce conflict it is in. The
+token gets shifted, and because the grammar said so, the conflict stops being
+one Puppy refuses to generate over.
+
+The rule above is the dangling `else`. Having read `if c then s` and seeing an
+`else`, the parser can finish the shorter alternative or carry on into the
+longer one, and in `if a then if b then x else y` those are the two readings of
+which `if` the `else` belongs to. Shifting attaches it to the nearer one, which
+is what every language with this syntax means -- and what Puppy would have done
+unprompted. `%shift` is how you say that is the intent rather than the default.
+
+It applies to shift/reduce and to nothing else. Two completed alternatives
+wanting the same cell is a reduce/reduce conflict, and there is no shift there
+to prefer, so `%shift` neither settles it nor hides it.
+
+An alternative marked `%shift` gives up the precedence it would have had --
+both the one it would inherit from its last terminal and any it could be given
+-- because losing on purpose is the whole of what it asked for. Writing `%prec`
+and `%shift` on the same alternative is an error for that reason: one asks for
+a precedence and the other asks for there to be none.
+
+A cell can hold more than one reduction, and each of them answers for itself. A
+reduction marked `%shift` sitting beside one that says nothing settles its own
+conflict and not the other, which is still reported.
+
 ### `%inline`
 
 ```plain

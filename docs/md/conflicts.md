@@ -18,8 +18,10 @@ shift/reduce conflict in state 4, on `PLUS`.
       expr -> expr PLUS expr
 
   Nothing in the grammar says which to prefer, so the parser will shift the token.
-  Declaring `%left`, `%right` or `%nonassoc` for the token, or `%prec` on
-  the production, would settle it deliberately.
+  `%shift` on the production says to prefer the shift, which is what will
+  happen anyway -- writing it makes that the grammar's decision rather than a
+  rule of thumb. Declaring `%left`, `%right` or `%nonassoc` for the token, or
+  `%prec` on the production, would settle it by precedence instead.
 ```
 
 The state number is there for reference; the two lines under it are the part to
@@ -53,6 +55,23 @@ Where a conflict is not about an operator, `%prec` moves one alternative to a
 different rank, and [`%inline`](grammar.md#inline)
 folds away a rule whose reduction has to happen too early.
 
+And sometimes shifting is simply right, with no ranking behind it. The dangling
+`else` is the standard case: having read `if c then s` and seeing an `else`,
+the parser can finish the shorter alternative or carry on into the longer one,
+and attaching the `else` to the nearer `if` is what was meant every time.
+[`%shift`](grammar.md#shift) on the shorter alternative says so:
+
+```plain
+stmt:
+  | IF c = expr THEN a = stmt %shift        { If c a }
+  | IF c = expr THEN a = stmt ELSE b = stmt { IfElse c a b }
+```
+
+The parser does the same thing it was going to do. What changes is that the
+conflict is now one the grammar decided, so it stops standing between you and a
+build -- and a conflict that turns up later, in a part of the grammar nobody
+meant to make ambiguous, is not buried among a hundred deliberate ones.
+
 ## Reduce/reduce
 
 ```plain
@@ -73,9 +92,11 @@ reduce/reduce conflict in state 1, on `end of input`.
 ```
 
 Precedence has nothing to say here: both alternatives are complete, and neither
-is waiting for a token whose rank could decide anything. Two rules that match
-the same input are usually two names for one idea, and the fix is in the
-grammar — merge them, or give one of them something the other has not got.
+is waiting for a token whose rank could decide anything. `%shift` has nothing
+to say either — there is no shift in this cell to prefer, so marking one of
+them changes nothing and hides nothing. Two rules that match the same input are
+usually two names for one idea, and the fix is in the grammar — merge them, or
+give one of them something the other has not got.
 
 ## What Puppy does not report
 
