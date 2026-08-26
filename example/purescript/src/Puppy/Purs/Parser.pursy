@@ -1,0 +1,820 @@
+-- A parser for PureScript, ported from the compiler's own `Parser.y`.
+--
+-- Puppy's own first large grammar. Read `example/purescript/README.md` for
+-- what was faithful and what had to change.
+
+%{
+import Data.Maybe (Maybe(..))
+import Puppy.Purs.CST as C
+import Puppy.Purs.Token as T
+%}
+
+%tokentype { T.Token }
+-- Punctuation. The position lives inside each payload rather than in an
+-- enclosing constructor, because a `%token` pattern gets one `$$` and a value
+-- it cannot reach is a value it does not have.
+%token LPAREN     "("    { T.TokLeftParen _ }
+%token RPAREN     ")"    { T.TokRightParen _ }
+%token LBRACE     "{"    { T.TokLeftBrace _ }
+%token RBRACE     "}"    { T.TokRightBrace _ }
+%token LSQUARE    "["    { T.TokLeftSquare _ }
+%token RSQUARE    "]"    { T.TokRightSquare _ }
+%token VOPEN      "the start of a block"       { T.TokLayoutStart _ }
+%token VCLOSE     "the end of a block"         { T.TokLayoutEnd _ }
+%token VSEP       "the start of a declaration" { T.TokLayoutSep _ }
+%token LARROW     "<-"   { T.TokLeftArrow _ }
+%token RARROW     "->"   { T.TokRightArrow _ }
+%token LFATARROW  "<="   { T.TokLeftFatArrow _ }
+%token RFATARROW  "=>"   { T.TokRightFatArrow _ }
+%token DCOLON     "::"   { T.TokDoubleColon _ }
+%token EQUALS     "="    { T.TokEquals _ }
+%token PIPE       "|"    { T.TokPipe _ }
+%token TICK       "`"    { T.TokTick _ }
+%token DOT        "."    { T.TokDot _ }
+%token COMMA      ","    { T.TokComma _ }
+%token UNDERSCORE "_"    { T.TokUnderscore _ }
+%token BACKSLASH  "\\"   { T.TokBackslash _ }
+%token FORALL     "forall" { T.TokForall _ }
+%token ARROWNAME  "(->)"   { T.TokSymbolArrow _ }
+
+-- Operators the grammar names one by one, before the catch-all `OPERATOR`, so
+-- that the arm for the particular one is reached first -- the ordering
+-- `Parser.y` relies on too.
+%token COLON  ":"    { T.TokOperator { name: ":" } }
+%token MINUS  "-"    { T.TokOperator { name: "-" } }
+%token AT     "@"    { T.TokOperator { name: "@" } }
+%token DOTDOT "(..)" { T.TokSymbol { name: ".." } }
+
+-- Keywords, likewise before `LOWER`.
+--
+-- None of these carries a payload, and several would like to: a keyword the
+-- grammar also accepts as an identifier -- `as`, `role`, `hiding` and the rest
+-- -- has a position the CST would keep if it could reach it. A pattern that
+-- pins `name` down cannot also capture the record it is in. See the README.
+%token AS       "as"       { T.TokLower { name: "as" } }
+%token CASE     "case"     { T.TokLower { name: "case" } }
+%token CLASS    "class"    { T.TokLower { name: "class" } }
+%token DATA     "data"     { T.TokLower { name: "data" } }
+%token DERIVE   "derive"   { T.TokLower { name: "derive" } }
+%token DO       "do"       { T.TokLower { name: "do" } }
+%token ADO      "ado"      { T.TokLower { name: "ado" } }
+%token ELSE     "else"     { T.TokLower { name: "else" } }
+%token FALSE    "false"    { T.TokLower { name: "false" } }
+%token FOREIGN  "foreign"  { T.TokLower { name: "foreign" } }
+%token HIDING   "hiding"   { T.TokLower { name: "hiding" } }
+%token IMPORT   "import"   { T.TokLower { name: "import" } }
+%token IF       "if"       { T.TokLower { name: "if" } }
+%token IN       "in"       { T.TokLower { name: "in" } }
+%token INFIX    "infix"    { T.TokLower { name: "infix" } }
+%token INFIXL   "infixl"   { T.TokLower { name: "infixl" } }
+%token INFIXR   "infixr"   { T.TokLower { name: "infixr" } }
+%token INSTANCE "instance" { T.TokLower { name: "instance" } }
+%token LET      "let"      { T.TokLower { name: "let" } }
+%token MODULE   "module"   { T.TokLower { name: "module" } }
+%token NEWTYPE  "newtype"  { T.TokLower { name: "newtype" } }
+%token NOMINAL  "nominal"  { T.TokLower { name: "nominal" } }
+%token OF       "of"       { T.TokLower { name: "of" } }
+%token PHANTOM  "phantom"  { T.TokLower { name: "phantom" } }
+%token REPRESENTATIONAL "representational" { T.TokLower { name: "representational" } }
+%token ROLE     "role"     { T.TokLower { name: "role" } }
+%token THEN     "then"     { T.TokLower { name: "then" } }
+%token TRUE     "true"     { T.TokLower { name: "true" } }
+%token TYPE     "type"     { T.TokLower { name: "type" } }
+%token WHERE    "where"    { T.TokLower { name: "where" } }
+
+-- `do` and `ado` may be qualified -- `M.do` -- which upstream writes as one
+-- pattern with a wildcard qualifier. Here the qualified spelling is a
+-- constructor of its own, so it is a terminal of its own too.
+%token QUAL_DO  "do"  { T.TokQualLower { name: "do" } }
+%token QUAL_ADO "ado" { T.TokQualLower { name: "ado" } }
+
+%token { T.Ident } LOWER          "a name"                  { T.TokLower $$ }
+%token { T.Qual }  QUAL_LOWER     "a qualified name"        { T.TokQualLower $$ }
+%token { T.Ident } UPPER          "a constructor"           { T.TokUpper $$ }
+%token { T.Qual }  QUAL_UPPER     "a qualified constructor" { T.TokQualUpper $$ }
+%token { T.Ident } SYMBOL         "a symbol"                { T.TokSymbol $$ }
+%token { T.Qual }  QUAL_SYMBOL    "a qualified symbol"      { T.TokQualSymbol $$ }
+%token { T.Ident } OPERATOR       "an operator"             { T.TokOperator $$ }
+%token { T.Qual }  QUAL_OPERATOR  "a qualified operator"    { T.TokQualOperator $$ }
+%token { T.Ident } LIT_HOLE       "a hole"                  { T.TokHole $$ }
+%token { T.Lit Char }   LIT_CHAR       "a character" { T.TokChar $$ }
+%token { T.Lit String } LIT_STRING     "a string"    { T.TokString $$ }
+%token { T.Lit String } LIT_RAW_STRING "a string"    { T.TokRawString $$ }
+%token { T.Lit Int }    LIT_INT        "an integer"  { T.TokInt $$ }
+%token { T.Lit Number } LIT_NUMBER     "a number"    { T.TokNumber $$ }
+
+
+%start { C.Module } parseModule
+%start { C.Type } parseType
+%start { C.Expr } parseExpr
+%start { C.Decl } parseDecl
+
+%type { C.Module } parseModule moduleHeaderAndBody
+%type { C.Type } parseType type type1 type2 type3 type4 type5 typeAtom typeKindedAtom
+%type { C.Row } row
+%type { C.RowLabel } rowLabel
+%type { C.TypeVarBinding } typeVarBinding
+%type { C.Name } properName ident label hole op symbol
+%type { C.Qual } moduleName qualProperName qualIdent qualOp qualSymbol
+%type { C.Expr } parseExpr exprWhereBody expr expr1 expr2 exprBacktick expr3 expr4 expr5 expr6 expr7 exprAtom
+%type { C.Where } exprWhere
+%type { C.RecordLabeled C.Expr } recordLabel
+%type { C.RecordUpdateOrLabel } recordUpdateOrLabel
+%type { C.RecordUpdate } recordUpdate
+%type { C.LetBinding } letBinding
+%type { C.CaseBranch } caseBranch
+%type { C.Guarded } guardedDecl guardedCase
+%type { C.GuardedExpr } guardedDeclExpr guardedCaseExpr
+%type { Array C.PatternGuard } guard
+%type { C.PatternGuard } patternGuard
+%type { C.DoStatement } doStatement
+%type { C.Binder } binder binder1 binder2 binderAtom
+%type { C.RecordLabeled C.Binder } recordBinder
+%type { C.Export } export
+%type { C.DataMembers } dataMembers
+%type { C.ImportDecl } importDecl
+%type { C.Import } import
+%type { C.ImportList } importList
+%type { C.Decl } parseDecl decl
+%type { C.DataHead } dataHead typeHead newtypeHead
+%type { C.DataCtor } dataCtor
+%type { C.ClassHead } classHeadPrefix
+%type { C.Constraint } constraint
+%type { Array C.Constraint } constraints constraintList
+%type { C.InstanceHead } instHead
+%type { C.InstanceBinding } instBinding
+%type { C.Fixity } fixity
+%type { C.FixityKeyword } infix
+%type { C.Role } role
+%type { C.Fundep } fundep
+%type { C.DeclChain } moduleDecl
+
+-- Every list is a rule of its own, because a `%type` names a nonterminal and a
+-- parameterised rule has no single type to name. The wrappers are where the
+-- annotation goes, and the generated `let` bindings are typed because of them.
+%type { Array C.Type } typeAtoms
+%type { Array C.TypeVarBinding } typeVarBindings typeVarBindings1
+%type { Array C.RowLabel } rowLabels
+%type { Array C.Expr } exprs1
+%type { Array C.Binder } binderAtoms binderAtoms1 binders1
+%type { Array C.LetBinding } letBindings
+%type { Array C.DoStatement } doStatements
+%type { Array C.CaseBranch } caseBranches
+%type { Array C.GuardedExpr } guardedDeclExprs guardedCaseExprs
+%type { Array C.PatternGuard } patternGuards
+%type { Array (C.RecordLabeled C.Expr) } recordLabels
+%type { Array C.RecordUpdateOrLabel } recordUpdateOrLabels
+%type { Array C.RecordUpdate } recordUpdates
+%type { Array (C.RecordLabeled C.Binder) } recordBinders
+%type { Array C.Name } labels1 idents1 properNames
+%type { Array C.Export } exports1
+%type { Array C.Import } imports1
+%type { Array C.Decl } decls1
+%type { Array C.DataCtor } dataCtors
+%type { Array C.Fundep } fundeps1
+%type { Array C.Role } roles1
+%type { Array C.DeclChain } moduleDecls
+%type { Array C.InstanceBinding } instBindings
+%type { Array C.Labeled } classMembers
+%type { C.Labeled } classMember
+%type { Maybe C.Type } rowTail
+%type { Maybe C.Name } importQualified
+%type { Maybe (Array C.Export) } exportList
+%type { Maybe (Array C.Fundep) } fundeps
+
+%%
+
+--------------------------------------------------------------------------------
+-- The parameterised helpers `Parser.y` opens with. Puppy has no standard
+-- library of these either, and they cost the same five lines.
+--------------------------------------------------------------------------------
+
+many(a):
+  | x = a                { [ x ] }
+  | xs = many(a) x = a   { xs <> [ x ] }
+
+manyOrEmpty(a):
+  |                      { [] }
+  | xs = many(a)         { xs }
+
+manySep(a, s):
+  | x = a                       { [ x ] }
+  | xs = manySep(a, s) s x = a  { xs <> [ x ] }
+
+manySepOrEmpty(a, s):
+  |                             { [] }
+  | xs = manySep(a, s)          { xs }
+
+delimited(open, a, s, close):
+  | open close                       { [] }
+  | open xs = manySep(a, s) close    { xs }
+
+layout(a, s):
+  | VOPEN xs = manySep(a, s) VCLOSE  { xs }
+
+--------------------------------------------------------------------------------
+-- Names
+--------------------------------------------------------------------------------
+
+moduleName:
+  | n = UPPER      { C.unqualified n }
+  | n = QUAL_UPPER { C.qualified n }
+
+qualProperName:
+  | n = UPPER      { C.unqualified n }
+  | n = QUAL_UPPER { C.qualified n }
+
+properName:
+  | n = UPPER { C.name n }
+
+qualIdent:
+  | n = LOWER        { C.unqualified n }
+  | n = QUAL_LOWER   { C.qualified n }
+  | AS               { C.keywordQual "as" }
+  | HIDING           { C.keywordQual "hiding" }
+  | ROLE             { C.keywordQual "role" }
+  | NOMINAL          { C.keywordQual "nominal" }
+  | REPRESENTATIONAL { C.keywordQual "representational" }
+  | PHANTOM          { C.keywordQual "phantom" }
+
+ident:
+  | n = LOWER        { C.name n }
+  | AS               { C.keyword "as" }
+  | HIDING           { C.keyword "hiding" }
+  | ROLE             { C.keyword "role" }
+  | NOMINAL          { C.keyword "nominal" }
+  | REPRESENTATIONAL { C.keyword "representational" }
+  | PHANTOM          { C.keyword "phantom" }
+
+qualOp:
+  | n = OPERATOR      { C.unqualified n }
+  | n = QUAL_OPERATOR { C.qualified n }
+  | LFATARROW         { C.keywordQual "<=" }
+  | MINUS             { C.keywordQual "-" }
+  | COLON             { C.keywordQual ":" }
+
+op:
+  | n = OPERATOR { C.name n }
+  | LFATARROW    { C.keyword "<=" }
+  | MINUS        { C.keyword "-" }
+  | COLON        { C.keyword ":" }
+
+qualSymbol:
+  | n = SYMBOL      { C.unqualified n }
+  | n = QUAL_SYMBOL { C.qualified n }
+  | DOTDOT          { C.keywordQual ".." }
+
+symbol:
+  | n = SYMBOL { C.name n }
+  | DOTDOT     { C.keyword ".." }
+
+hole:
+  | n = LIT_HOLE { C.name n }
+
+label:
+  | n = LOWER          { C.name n }
+  | s = LIT_STRING     { C.stringLabel s }
+  | s = LIT_RAW_STRING { C.stringLabel s }
+  | ADO      { C.keyword "ado" }
+  | AS       { C.keyword "as" }
+  | CASE     { C.keyword "case" }
+  | CLASS    { C.keyword "class" }
+  | DATA     { C.keyword "data" }
+  | DERIVE   { C.keyword "derive" }
+  | DO       { C.keyword "do" }
+  | ELSE     { C.keyword "else" }
+  | FALSE    { C.keyword "false" }
+  | FORALL   { C.keyword "forall" }
+  | FOREIGN  { C.keyword "foreign" }
+  | HIDING   { C.keyword "hiding" }
+  | IMPORT   { C.keyword "import" }
+  | IF       { C.keyword "if" }
+  | IN       { C.keyword "in" }
+  | INFIX    { C.keyword "infix" }
+  | INFIXL   { C.keyword "infixl" }
+  | INFIXR   { C.keyword "infixr" }
+  | INSTANCE { C.keyword "instance" }
+  | LET      { C.keyword "let" }
+  | MODULE   { C.keyword "module" }
+  | NEWTYPE  { C.keyword "newtype" }
+  | NOMINAL  { C.keyword "nominal" }
+  | OF       { C.keyword "of" }
+  | PHANTOM  { C.keyword "phantom" }
+  | REPRESENTATIONAL { C.keyword "representational" }
+  | ROLE     { C.keyword "role" }
+  | THEN     { C.keyword "then" }
+  | TRUE     { C.keyword "true" }
+  | TYPE     { C.keyword "type" }
+  | WHERE    { C.keyword "where" }
+
+--------------------------------------------------------------------------------
+-- Types
+--------------------------------------------------------------------------------
+
+type:
+  | t = type1 %shift           { t }
+  | t = type1 DCOLON k = type  { C.TypeKinded t k }
+
+type1:
+  | t = type2                                  { t }
+  | FORALL vs = typeVarBindings1 DOT t = type1 { C.TypeForall vs t }
+
+type2:
+  | t = type3 %shift               { t }
+  | a = type3 RARROW b = type1     { C.TypeArrow a b }
+  | a = type3 RFATARROW b = type1  { C.TypeConstrained a b }
+
+type3:
+  | t = type4                        { t }
+  | a = type3 o = qualOp b = type4   { C.TypeOp a o b }
+
+type4:
+  | t = type5 %shift   { t }
+  | MINUS i = LIT_INT  { C.TypeInt (negate (C.litValue i)) }
+
+type5:
+  | t = typeAtom             { t }
+  | f = type5 a = typeAtom   { C.TypeApp f a }
+
+typeAtom:
+  | UNDERSCORE          { C.TypeWildcard }
+  | n = ident           { C.TypeVar n }
+  | n = qualProperName  { C.TypeConstructor n }
+  | n = qualSymbol      { C.TypeOpName n }
+  | s = LIT_STRING      { C.TypeString (C.litValue s) }
+  | i = LIT_INT         { C.TypeInt (C.litValue i) }
+  | n = hole            { C.TypeHole n }
+  | ARROWNAME           { C.TypeArrowName }
+  | LBRACE r = row RBRACE    { C.TypeRecord r }
+  | LPAREN r = row RPAREN    { C.TypeRow r }
+  | LPAREN t = type1 RPAREN  { C.TypeParens t }
+  | LPAREN t = typeKindedAtom DCOLON k = type RPAREN { C.TypeParens (C.TypeKinded t k) }
+
+-- Kept from `Parser.y`, comment and all: because of the conflict between row
+-- syntax and kinded type syntax, a kinded type variable must be parenthesised.
+-- `(a :: Foo)` is always a row; annotating `a` needs `((a) :: Foo)`.
+typeKindedAtom:
+  | UNDERSCORE          { C.TypeWildcard }
+  | n = qualProperName  { C.TypeConstructor n }
+  | n = qualSymbol      { C.TypeOpName n }
+  | i = LIT_INT         { C.TypeInt (C.litValue i) }
+  | n = hole            { C.TypeHole n }
+  | LBRACE r = row RBRACE    { C.TypeRecord r }
+  | LPAREN r = row RPAREN    { C.TypeRow r }
+  | LPAREN t = type1 RPAREN  { C.TypeParens t }
+  | LPAREN t = typeKindedAtom DCOLON k = type RPAREN { C.TypeParens (C.TypeKinded t k) }
+
+row:
+  | t = rowTail                        { C.Row [] t }
+  | ls = rowLabels t = rowTail         { C.Row ls t }
+
+rowTail:
+  |                { Nothing }
+  | PIPE t = type  { Just t }
+
+rowLabels:
+  | ls = manySep(rowLabel, COMMA) { ls }
+
+rowLabel:
+  | l = label DCOLON t = type { C.RowLabel l t }
+
+typeVarBinding:
+  | n = ident                               { C.TypeVarName n }
+  | LPAREN n = ident DCOLON k = type RPAREN { C.TypeVarKinded n k }
+
+typeVarBindings:
+  | vs = manyOrEmpty(typeVarBinding) { vs }
+
+typeVarBindings1:
+  | vs = many(typeVarBinding) { vs }
+
+typeAtoms:
+  | ts = manyOrEmpty(typeAtom) { ts }
+
+--------------------------------------------------------------------------------
+-- Expressions
+--------------------------------------------------------------------------------
+
+exprWhere:
+  | e = exprWhereBody                            { C.Where e [] }
+  | e = exprWhereBody WHERE bs = letBindings     { C.Where e bs }
+
+exprWhereBody:
+  | e = expr { e }
+
+expr:
+  | e = expr1 %shift             { e }
+  | e = expr1 DCOLON t = type    { C.ExprTyped e t }
+
+expr1:
+  | e = expr2 %shift                       { e }
+  | a = expr1 o = qualOp b = expr2 %shift  { C.ExprOp a o b }
+
+expr2:
+  | e = expr3                                            { e }
+  | a = expr2 TICK b = exprBacktick TICK c = expr3        { C.ExprInfix a b c }
+
+exprBacktick:
+  | e = expr3                                { e }
+  | a = exprBacktick o = qualOp b = expr3    { C.ExprOp a o b }
+
+expr3:
+  | e = expr4 %shift     { e }
+  | MINUS e = expr3      { C.ExprNegate e }
+
+expr4:
+  | e = expr5                { e }
+  | f = expr4 a = expr5      { C.exprApp f a }
+
+expr5:
+  | e = expr6                                        { e }
+  | IF c = expr THEN t = expr ELSE f = expr          { C.ExprIf c t f }
+  | DO ss = doStatements                             { C.ExprDo ss }
+  | QUAL_DO ss = doStatements                        { C.ExprDo ss }
+  | ADO ss = doStatements IN e = expr                { C.ExprAdo ss e }
+  | QUAL_ADO ss = doStatements IN e = expr           { C.ExprAdo ss e }
+  | BACKSLASH bs = binderAtoms1 RARROW e = expr      { C.ExprLambda bs e }
+  | LET bs = letBindings IN e = expr                 { C.ExprLet bs e }
+  | CASE es = exprs1 OF bs = caseBranches            { C.ExprCase es bs }
+
+expr6:
+  | e = expr7 %shift                                     { e }
+  | e = expr7 LBRACE RBRACE                              { C.ExprApp e (C.ExprRecord []) }
+  | e = expr7 LBRACE us = recordUpdateOrLabels RBRACE    { C.recordApplyOrUpdate e us }
+
+expr7:
+  | e = exprAtom                          { e }
+  | e = exprAtom DOT ls = labels1         { C.ExprRecordAccessor e ls }
+
+exprAtom:
+  | UNDERSCORE          { C.ExprSection }
+  | n = hole            { C.ExprHole n }
+  | n = qualIdent       { C.ExprIdent n }
+  | n = qualProperName  { C.ExprConstructor n }
+  | n = qualSymbol      { C.ExprOpName n }
+  | TRUE                { C.ExprBoolean true }
+  | FALSE               { C.ExprBoolean false }
+  | c = LIT_CHAR        { C.ExprChar (C.litValue c) }
+  | s = LIT_STRING      { C.ExprString (C.litValue s) }
+  | s = LIT_RAW_STRING  { C.ExprString (C.litValue s) }
+  | i = LIT_INT         { C.ExprInt (C.litValue i) }
+  | d = LIT_NUMBER      { C.ExprNumber (C.litValue d) }
+  | es = delimited(LSQUARE, expr, COMMA, RSQUARE)         { C.ExprArray es }
+  | ls = delimited(LBRACE, recordLabel, COMMA, RBRACE)    { C.ExprRecord ls }
+  | LPAREN e = expr RPAREN                                { C.ExprParens e }
+
+recordLabel:
+  | l = label                 { C.RecordPun l }
+  | l = label COLON e = expr  { C.RecordField l e }
+  | l = label EQUALS e = expr { C.recordUpdateInCtr l e }
+
+recordUpdateOrLabel:
+  | l = label COLON e = expr                       { C.UpdateOrLabelField l e }
+  | l = label                                      { C.UpdateOrLabelPun l }
+  | l = label EQUALS e = expr                      { C.UpdateOrLabelLeaf l e }
+  | l = label LBRACE us = recordUpdates RBRACE     { C.UpdateOrLabelBranch l us }
+
+recordUpdate:
+  | l = label EQUALS e = expr                      { C.RecordUpdateLeaf l e }
+  | l = label LBRACE us = recordUpdates RBRACE     { C.RecordUpdateBranch l us }
+
+-- A `let` binding is parsed as a binder followed by what a value binding takes,
+-- and told apart afterwards. `x = e` is both a name binding and a pattern
+-- binding as far as an LR automaton is concerned; upstream settles that with
+-- happy's `%shift`, which Puppy has no equivalent of.
+letBinding:
+  | n = ident DCOLON t = type   { C.LetSignature n t }
+  | b = binder1 g = guardedDecl { C.letBinding b g }
+
+letBindings:
+  | bs = layout(letBinding, VSEP) { bs }
+
+caseBranch:
+  | bs = binders1 g = guardedCase { C.CaseBranch bs g }
+
+caseBranches:
+  | bs = layout(caseBranch, VSEP) { bs }
+
+guardedDecl:
+  | EQUALS e = exprWhere        { C.Unconditional e }
+  | gs = guardedDeclExprs       { C.Guarded gs }
+
+guardedDeclExprs:
+  | gs = many(guardedDeclExpr) { gs }
+
+guardedDeclExpr:
+  | g = guard EQUALS e = exprWhere { C.GuardedExpr g e }
+
+guardedCase:
+  | RARROW e = exprWhere    { C.Unconditional e }
+  | gs = guardedCaseExprs   { C.Guarded gs }
+
+guardedCaseExprs:
+  | gs = many(guardedCaseExpr) { gs }
+
+guardedCaseExpr:
+  | g = guard RARROW e = exprWhere { C.GuardedExpr g e }
+
+-- Upstream parses a pattern guard by trying a binder and backtracking. Here the
+-- left of a `<-` is parsed as an expression and turned into a binder
+-- afterwards, which is the alternative its comment describes and declines.
+guard:
+  | PIPE gs = patternGuards { gs }
+
+patternGuards:
+  | gs = manySep(patternGuard, COMMA) { gs }
+
+patternGuard:
+  | e = expr1                     { C.GuardExpr e }
+  | b = expr1 LARROW e = expr1    { C.GuardBind (C.toBinder b) e }
+
+-- Do statements have the same shape of ambiguity, and the same answer.
+doStatement:
+  | LET bs = letBindings          { C.DoLet bs }
+  | e = expr                      { C.DoDiscard e }
+  | b = expr LARROW e = expr      { C.DoBind (C.toBinder b) e }
+
+doStatements:
+  | ss = layout(doStatement, VSEP) { ss }
+
+exprs1:
+  | es = manySep(expr, COMMA) { es }
+
+labels1:
+  | ls = manySep(label, DOT) { ls }
+
+recordLabels:
+  | ls = manySep(recordLabel, COMMA) { ls }
+
+recordUpdateOrLabels:
+  | us = manySep(recordUpdateOrLabel, COMMA) { us }
+
+recordUpdates:
+  | us = manySep(recordUpdate, COMMA) { us }
+
+--------------------------------------------------------------------------------
+-- Binders
+--------------------------------------------------------------------------------
+
+binder:
+  | b = binder1                 { b }
+  | b = binder1 DCOLON t = type { C.BinderTyped b t }
+
+binder1:
+  | b = binder2                          { b }
+  | a = binder1 o = qualOp b = binder2   { C.BinderOp a o b }
+
+binder2:
+  | bs = binderAtoms1     { C.binderConstructor bs }
+  | MINUS i = LIT_INT     { C.BinderInt (negate (C.litValue i)) }
+  | MINUS d = LIT_NUMBER  { C.BinderNumber (negate (C.litValue d)) }
+
+binderAtom:
+  | UNDERSCORE                    { C.BinderWildcard }
+  | n = ident                     { C.BinderVar n }
+  | n = ident AT b = binderAtom   { C.BinderNamed n b }
+  | n = qualProperName            { C.BinderConstructor n [] }
+  | TRUE                          { C.BinderBoolean true }
+  | FALSE                         { C.BinderBoolean false }
+  | c = LIT_CHAR                  { C.BinderChar (C.litValue c) }
+  | s = LIT_STRING                { C.BinderString (C.litValue s) }
+  | s = LIT_RAW_STRING            { C.BinderString (C.litValue s) }
+  | i = LIT_INT                   { C.BinderInt (C.litValue i) }
+  | d = LIT_NUMBER                { C.BinderNumber (C.litValue d) }
+  | bs = delimited(LSQUARE, binder, COMMA, RSQUARE)      { C.BinderArray bs }
+  | bs = delimited(LBRACE, recordBinder, COMMA, RBRACE)  { C.BinderRecord bs }
+  | LPAREN b = binder RPAREN                             { C.BinderParens b }
+
+recordBinder:
+  | l = label                   { C.RecordPun l }
+  | l = label COLON b = binder  { C.RecordField l b }
+  | l = label EQUALS b = binder { C.recordBinderInCtr l b }
+
+binderAtoms:
+  | bs = manyOrEmpty(binderAtom) { bs }
+
+binderAtoms1:
+  | bs = many(binderAtom) { bs }
+
+binders1:
+  | bs = manySep(binder1, COMMA) { bs }
+
+recordBinders:
+  | bs = manySep(recordBinder, COMMA) { bs }
+
+--------------------------------------------------------------------------------
+-- Modules
+--------------------------------------------------------------------------------
+
+-- Upstream splits the header from the body so that the header can be parsed on
+-- its own and the work shared with a later full parse. That split is what its
+-- `moduleImports` rule needs `pushBack` for, and nothing here parses a header
+-- alone, so the imports are left to `moduleDecls` -- which takes them anyway,
+-- since PureScript allows an import after a declaration.
+moduleHeaderAndBody:
+  | MODULE n = moduleName es = exportList WHERE VOPEN ds = moduleDecls VCLOSE
+      { C.moduleOf n es ds }
+
+exportList:
+  |                                    { Nothing }
+  | LPAREN es = exports1 RPAREN        { Just es }
+
+exports1:
+  | es = manySep(export, COMMA) { es }
+
+export:
+  | n = ident                    { C.ExportValue n }
+  | n = symbol                   { C.ExportOp n }
+  | n = properName               { C.ExportType n Nothing }
+  | n = properName m = dataMembers { C.ExportType n (Just m) }
+  | TYPE n = symbol              { C.ExportTypeOp n }
+  | CLASS n = properName         { C.ExportClass n }
+  | MODULE n = moduleName        { C.ExportModule n }
+
+dataMembers:
+  | DOTDOT                            { C.DataAll }
+  | LPAREN RPAREN                     { C.DataEnumerated [] }
+  | LPAREN ns = properNames RPAREN    { C.DataEnumerated ns }
+
+properNames:
+  | ns = manySep(properName, COMMA) { ns }
+
+importDecl:
+  | IMPORT n = moduleName l = importList q = importQualified { C.ImportDecl n l q }
+
+importList:
+  |                                          { C.ImportAll }
+  | LPAREN is = imports1 RPAREN              { C.ImportOnly is }
+  | HIDING LPAREN is = imports1 RPAREN       { C.ImportHiding is }
+
+importQualified:
+  |                     { Nothing }
+  | AS n = moduleName   { Just (C.qualName n) }
+
+imports1:
+  | is = manySep(import, COMMA) { is }
+
+import:
+  | n = ident                      { C.ImportValue n }
+  | n = symbol                     { C.ImportOp n }
+  | n = properName                 { C.ImportType n Nothing }
+  | n = properName m = dataMembers { C.ImportType n (Just m) }
+  | TYPE n = symbol                { C.ImportTypeOp n }
+  | CLASS n = properName           { C.ImportClass n }
+
+moduleDecls:
+  | ds = manySepOrEmpty(moduleDecl, VSEP) { ds }
+
+-- An instance chain is a run of declarations joined by `else`.
+moduleDecl:
+  | i = importDecl            { C.ChainImport i }
+  | ds = decls1               { C.ChainDecls ds }
+
+decls1:
+  | d = decl                     { [ d ] }
+  | ds = decls1 ELSE d = decl    { ds <> [ d ] }
+  | ds = decls1 ELSE VSEP d = decl { ds <> [ d ] }
+
+--------------------------------------------------------------------------------
+-- Declarations
+--------------------------------------------------------------------------------
+
+decl:
+  | h = dataHead                          { C.DeclData h [] }
+  | h = dataHead EQUALS cs = dataCtors    { C.DeclData h cs }
+  | h = typeHead EQUALS t = type          { C.DeclType h t }
+  | h = newtypeHead EQUALS n = properName t = typeAtom { C.DeclNewtype h n t }
+  | DATA n = properName DCOLON t = type    { C.DeclKindSignature C.KindData n t }
+  | NEWTYPE n = properName DCOLON t = type { C.DeclKindSignature C.KindNewtype n t }
+  | TYPE n = properName DCOLON t = type    { C.DeclKindSignature C.KindType n t }
+  | CLASS n = properName DCOLON t = type   { C.DeclKindSignature C.KindClass n t }
+  | h = classHeadPrefix                                    { C.declClass h [] }
+  | h = classHeadPrefix WHERE ms = classMembers            { C.declClass h ms }
+  | h = instHead                                     { C.DeclInstance h [] }
+  | h = instHead WHERE bs = instBindings             { C.DeclInstance h bs }
+  | DERIVE h = instHead          { C.DeclDerive false h }
+  | DERIVE NEWTYPE h = instHead  { C.DeclDerive true h }
+  | n = ident DCOLON t = type    { C.DeclSignature n t }
+  | n = ident bs = binderAtoms g = guardedDecl { C.DeclValue n bs g }
+  | f = fixity                   { C.DeclFixity f }
+  | FOREIGN IMPORT n = ident DCOLON t = type              { C.DeclForeignValue n t }
+  | FOREIGN IMPORT DATA n = properName DCOLON t = type    { C.DeclForeignData n t }
+  | TYPE ROLE n = properName rs = roles1                  { C.DeclRole n rs }
+
+dataHead:
+  | DATA n = properName vs = typeVarBindings { C.DataHead n vs }
+
+typeHead:
+  | TYPE n = properName vs = typeVarBindings { C.DataHead n vs }
+
+newtypeHead:
+  | NEWTYPE n = properName vs = typeVarBindings { C.DataHead n vs }
+
+dataCtors:
+  | cs = manySep(dataCtor, PIPE) { cs }
+
+dataCtor:
+  | n = properName ts = typeAtoms { C.DataCtor n ts }
+
+-- Upstream needs unbounded lookahead here: after `class`, `(a :: B)` is a row
+-- inside a constraint if `B` is a type and a kinded type variable if `B` is a
+-- kind, and only a later `<=`, `where` or layout token says which. The prefix
+-- is parsed once, the same way both times, and read as one or the other once
+-- the token after it has arrived.
+classHeadPrefix:
+  | CLASS n = qualProperName ts = typeAtoms fd = fundeps
+      { C.classHead [] n ts fd }
+  | CLASS cs = constraints LFATARROW n = qualProperName ts = typeAtoms fd = fundeps
+      { C.classHead cs n ts fd }
+
+fundeps:
+  |                              { Nothing }
+  | PIPE fs = fundeps1           { Just fs }
+
+fundeps1:
+  | fs = manySep(fundep, COMMA) { fs }
+
+fundep:
+  | RARROW ns = idents1              { C.FundepDetermined ns }
+  | as = idents1 RARROW bs = idents1 { C.FundepDetermines as bs }
+
+idents1:
+  | ns = many(ident) { ns }
+
+classMember:
+  | n = ident DCOLON t = type { C.Labeled n t }
+
+classMembers:
+  | ms = layout(classMember, VSEP) { ms }
+
+instHead:
+  | INSTANCE cs = constraints RFATARROW n = qualProperName ts = typeAtoms
+      { C.InstanceHead Nothing cs n ts }
+  | INSTANCE n = qualProperName ts = typeAtoms
+      { C.InstanceHead Nothing [] n ts }
+  | INSTANCE i = ident DCOLON cs = constraints RFATARROW n = qualProperName ts = typeAtoms
+      { C.InstanceHead (Just i) cs n ts }
+  | INSTANCE i = ident DCOLON n = qualProperName ts = typeAtoms
+      { C.InstanceHead (Just i) [] n ts }
+
+-- `(Foo a)` is both a parenthesised constraint and a one-element list of them,
+-- and they build the same tree either way. The list gets a rule of its own so
+-- that `%shift` can settle that here without reaching every other use of
+-- `manySep`.
+constraints:
+  | c = constraint                        { [ c ] }
+  | LPAREN cs = constraintList RPAREN     { cs }
+
+constraintList:
+  | c = constraint %shift                      { [ c ] }
+  | cs = constraintList COMMA c = constraint   { cs <> [ c ] }
+
+constraint:
+  | n = qualProperName ts = typeAtoms  { C.Constraint n ts }
+  | LPAREN c = constraint RPAREN       { c }
+
+instBinding:
+  | n = ident DCOLON t = type                  { C.InstanceSignature n t }
+  | n = ident bs = binderAtoms g = guardedDecl { C.InstanceName n bs g }
+
+instBindings:
+  | bs = layout(instBinding, VSEP) { bs }
+
+fixity:
+  | k = infix i = LIT_INT n = qualIdent AS o = op       { C.FixityValue k (C.litValue i) n o }
+  | k = infix i = LIT_INT n = qualProperName AS o = op  { C.FixityValue k (C.litValue i) n o }
+  | k = infix i = LIT_INT TYPE n = qualProperName AS o = op { C.FixityType k (C.litValue i) n o }
+
+infix:
+  | INFIX  { C.Infix }
+  | INFIXL { C.Infixl }
+  | INFIXR { C.Infixr }
+
+role:
+  | NOMINAL          { C.RoleNominal }
+  | REPRESENTATIONAL { C.RoleRepresentational }
+  | PHANTOM          { C.RolePhantom }
+
+roles1:
+  | rs = many(role) { rs }
+
+--------------------------------------------------------------------------------
+-- Entry points
+--
+-- Upstream names its entry points separately with `%name parseType type`.
+-- Puppy names the function after the start symbol, and `type`, `expr` and
+-- `decl` are either PureScript keywords or names the grammar already uses, so
+-- each entry point is a rule of its own.
+--------------------------------------------------------------------------------
+
+parseModule:
+  | m = moduleHeaderAndBody { m }
+
+parseType:
+  | t = type { t }
+
+parseExpr:
+  | e = expr { e }
+
+parseDecl:
+  | d = decl { d }

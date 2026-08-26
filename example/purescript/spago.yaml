@@ -1,0 +1,19 @@
+# The PureScript grammar, ported from the compiler's own `Parser.y`.
+#
+# Not part of the build CI runs: this is an example and a stress test, not
+# something that ships. See README.md.
+package:
+  name: puppy-example-purescript
+  dependencies:
+    - arrays
+    - maybe
+    - prelude
+    - puppy-runtime
+    - strings
+  test:
+    main: Test.Puppy.Purs
+    dependencies:
+      - effect
+      - spec
+      - spec-node
+      - tuples

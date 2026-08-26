@@ -16,6 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      example: ${{ steps.filter.outputs.example }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v4
@@ -34,6 +35,10 @@ jobs:
               - 'flake.nix'
               - 'flake.lock'
               - '.github/workflows/ci.yaml'
+            # The PureScript grammar. Built by the `stress` job below, not the
+            # one above.
+            example:
+              - 'example/**'
 
   ci:
     needs: changes
@@ -87,16 +92,78 @@ jobs:
       - name: Format check
         run: git ls-files '*.purs' ':(exclude)docs/**' | xargs purs-tidy check
 
+  # The PureScript grammar under example/ is a real grammar regression test: 641
+  # states, 396 productions and every `%shift` site the port needed. It is kept
+  # out of the job above so that a change to it cannot hold up the packages
+  # that ship, and run here so that it cannot quietly stop working either.
+  stress:
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || needs.changes.outputs.example == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v30
+        with:
+          extra_nix_config: experimental-features = nix-command flakes
+      - uses: cachix/cachix-action@v17
+        with:
+          name: katsujukou-github
+          authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
+      - uses: nicknovitski/nix-develop@v1
+
+      # No `--allow-conflicts`. Every conflict this grammar has is one it
+      # settles, and a new one should stop the build.
+      #
+      # `--emit-explain` writes a report when something is left unsettled and
+      # removes a stale one when nothing is, so a report left behind by an
+      # earlier state of the grammar shows up in the diff below rather than
+      # sitting in the tree contradicting it.
+      - name: Generate the PureScript parser
+        run: |
+          spago run -p puppy-cli --pure -- \
+            example/purescript/src/Puppy/Purs/Parser.pursy \
+            -m Puppy.Purs.Parser \
+            -o example/purescript/src/Puppy/Purs/Parser.purs \
+            --emit-explain
+
+      - name: The committed parser is current
+        run: git diff --exit-code example/purescript/src
+
+      - name: Compile and run it
+        run: spago test -p puppy-example-purescript --pure
+
   ps-ci-gate:
-    needs: [ci]
+    needs: [changes, ci, stress]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Gate on the ci result
+      # A skipped job is not a passing one unless the filter meant to skip it.
+      # `changes` is what decides that, so it has to have run: if it failed,
+      # both jobs below are skipped for a reason that has nothing to do with
+      # the code, and a gate that only looks for `failure` would wave it
+      # through.
+      - name: Gate on the results
         run: |
-          result='${{ needs.ci.result }}'
-          if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
-            echo "::error::PureScript CI did not pass (result: $result)"
+          changes='${{ needs.changes.result }}'
+          if [ "$changes" != "success" ]; then
+            echo "::error::changes did not pass (result: $changes)"
             exit 1
           fi
-          echo "CI gate green (ci result: $result)"
+
+          code='${{ needs.changes.outputs.code }}'
+          example='${{ needs.changes.outputs.example }}'
+          ci='${{ needs.ci.result }}'
+          stress='${{ needs.stress.result }}'
+
+          if [ "$code" = "true" ] && [ "$ci" != "success" ]; then
+            echo "::error::ci did not pass (result: $ci)"
+            exit 1
+          fi
+
+          if { [ "$code" = "true" ] || [ "$example" = "true" ]; } \
+            && [ "$stress" != "success" ]; then
+            echo "::error::stress did not pass (result: $stress)"
+            exit 1
+          fi
+
+          echo "CI gate green (code=$code example=$example ci=$ci stress=$stress)"

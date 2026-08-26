@@ -67,6 +67,26 @@
           ]
         }
       },
+      "puppy-example-purescript": {
+        "path": "example/purescript",
+        "core": {
+          "dependencies": [
+            "arrays",
+            "maybe",
+            "prelude",
+            "puppy-runtime",
+            "strings"
+          ]
+        },
+        "test": {
+          "dependencies": [
+            "effect",
+            "spec",
+            "spec-node",
+            "tuples"
+          ]
+        }
+      },
       "puppy-fixture": {
         "path": "fixture",
         "core": {
