@@ -17,3 +17,10 @@ package:
       - spec
       - spec-node
       - tuples
+      - datetime
+      - now
+      - numbers
+      - refs
+      - foldable-traversable
+      - integers
+      - console

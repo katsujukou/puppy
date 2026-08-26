@@ -80,7 +80,14 @@
         },
         "test": {
           "dependencies": [
+            "console",
+            "datetime",
             "effect",
+            "foldable-traversable",
+            "integers",
+            "now",
+            "numbers",
+            "refs",
             "spec",
             "spec-node",
             "tuples"
