@@ -6,103 +6,103 @@
 %{
 import Data.Maybe (Maybe(..))
 import Puppy.Purs.CST as C
-import Puppy.Purs.Token as T
+import PureScript.CST.Types as T
 %}
 
-%tokentype { T.Token }
--- Punctuation. The position lives inside each payload rather than in an
--- enclosing constructor, because a `%token` pattern gets one `$$` and a value
--- it cannot reach is a value it does not have.
-%token LPAREN     "("    { T.TokLeftParen _ }
-%token RPAREN     ")"    { T.TokRightParen _ }
-%token LBRACE     "{"    { T.TokLeftBrace _ }
-%token RBRACE     "}"    { T.TokRightBrace _ }
-%token LSQUARE    "["    { T.TokLeftSquare _ }
-%token RSQUARE    "]"    { T.TokRightSquare _ }
-%token VOPEN      "the start of a block"       { T.TokLayoutStart _ }
-%token VCLOSE     "the end of a block"         { T.TokLayoutEnd _ }
-%token VSEP       "the start of a declaration" { T.TokLayoutSep _ }
-%token LARROW     "<-"   { T.TokLeftArrow _ }
-%token RARROW     "->"   { T.TokRightArrow _ }
-%token LFATARROW  "<="   { T.TokLeftFatArrow _ }
-%token RFATARROW  "=>"   { T.TokRightFatArrow _ }
-%token DCOLON     "::"   { T.TokDoubleColon _ }
-%token EQUALS     "="    { T.TokEquals _ }
-%token PIPE       "|"    { T.TokPipe _ }
-%token TICK       "`"    { T.TokTick _ }
-%token DOT        "."    { T.TokDot _ }
-%token COMMA      ","    { T.TokComma _ }
-%token UNDERSCORE "_"    { T.TokUnderscore _ }
-%token BACKSLASH  "\\"   { T.TokBackslash _ }
-%token FORALL     "forall" { T.TokForall _ }
-%token ARROWNAME  "(->)"   { T.TokSymbolArrow _ }
+%tokentype { T.SourceToken }
 
--- Operators the grammar names one by one, before the catch-all `OPERATOR`, so
--- that the arm for the particular one is reached first -- the ordering
--- `Parser.y` relies on too.
-%token COLON  ":"    { T.TokOperator { name: ":" } }
-%token MINUS  "-"    { T.TokOperator { name: "-" } }
-%token AT     "@"    { T.TokOperator { name: "@" } }
-%token DOTDOT "(..)" { T.TokSymbol { name: ".." } }
-
--- Keywords, likewise before `LOWER`.
+-- Every terminal's value is the token itself. That is what `@` is for, and it
+-- is what a token type like this one needs: the pattern spends itself on
+-- saying which token this is, and everything a rule wants -- the range, the
+-- comments, the name inside -- is in the record the pattern matched.
 --
--- None of these carries a payload, and several would like to: a keyword the
--- grammar also accepts as an identifier -- `as`, `role`, `hiding` and the rest
--- -- has a position the CST would keep if it could reach it. A pattern that
--- pins `name` down cannot also capture the record it is in. See the README.
-%token AS       "as"       { T.TokLower { name: "as" } }
-%token CASE     "case"     { T.TokLower { name: "case" } }
-%token CLASS    "class"    { T.TokLower { name: "class" } }
-%token DATA     "data"     { T.TokLower { name: "data" } }
-%token DERIVE   "derive"   { T.TokLower { name: "derive" } }
-%token DO       "do"       { T.TokLower { name: "do" } }
-%token ADO      "ado"      { T.TokLower { name: "ado" } }
-%token ELSE     "else"     { T.TokLower { name: "else" } }
-%token FALSE    "false"    { T.TokLower { name: "false" } }
-%token FOREIGN  "foreign"  { T.TokLower { name: "foreign" } }
-%token HIDING   "hiding"   { T.TokLower { name: "hiding" } }
-%token IMPORT   "import"   { T.TokLower { name: "import" } }
-%token IF       "if"       { T.TokLower { name: "if" } }
-%token IN       "in"       { T.TokLower { name: "in" } }
-%token INFIX    "infix"    { T.TokLower { name: "infix" } }
-%token INFIXL   "infixl"   { T.TokLower { name: "infixl" } }
-%token INFIXR   "infixr"   { T.TokLower { name: "infixr" } }
-%token INSTANCE "instance" { T.TokLower { name: "instance" } }
-%token LET      "let"      { T.TokLower { name: "let" } }
-%token MODULE   "module"   { T.TokLower { name: "module" } }
-%token NEWTYPE  "newtype"  { T.TokLower { name: "newtype" } }
-%token NOMINAL  "nominal"  { T.TokLower { name: "nominal" } }
-%token OF       "of"       { T.TokLower { name: "of" } }
-%token PHANTOM  "phantom"  { T.TokLower { name: "phantom" } }
-%token REPRESENTATIONAL "representational" { T.TokLower { name: "representational" } }
-%token ROLE     "role"     { T.TokLower { name: "role" } }
-%token THEN     "then"     { T.TokLower { name: "then" } }
-%token TRUE     "true"     { T.TokLower { name: "true" } }
-%token TYPE     "type"     { T.TokLower { name: "type" } }
-%token WHERE    "where"    { T.TokLower { name: "where" } }
+-- Written against the token type of `purescript-language-cst-parser`, whose
+-- lexer produces these and applies the layout rule while it does.
 
--- `do` and `ado` may be qualified -- `M.do` -- which upstream writes as one
--- pattern with a wildcard qualifier. Here the qualified spelling is a
--- constructor of its own, so it is a terminal of its own too.
-%token QUAL_DO  "do"  { T.TokQualLower { name: "do" } }
-%token QUAL_ADO "ado" { T.TokQualLower { name: "ado" } }
+%token LPAREN     "("  @ { { value: T.TokLeftParen } }
+%token RPAREN     ")"  @ { { value: T.TokRightParen } }
+%token LBRACE     "{"  @ { { value: T.TokLeftBrace } }
+%token RBRACE     "}"  @ { { value: T.TokRightBrace } }
+%token LSQUARE    "["  @ { { value: T.TokLeftSquare } }
+%token RSQUARE    "]"  @ { { value: T.TokRightSquare } }
+%token VOPEN      "the start of a block"       @ { { value: T.TokLayoutStart _ } }
+%token VCLOSE     "the end of a block"         @ { { value: T.TokLayoutEnd _ } }
+%token VSEP       "the start of a declaration" @ { { value: T.TokLayoutSep _ } }
+%token LARROW     "<-" @ { { value: T.TokLeftArrow _ } }
+%token RARROW     "->" @ { { value: T.TokRightArrow _ } }
+%token RFATARROW  "=>" @ { { value: T.TokRightFatArrow _ } }
+%token DCOLON     "::" @ { { value: T.TokDoubleColon _ } }
+%token EQUALS     "="  @ { { value: T.TokEquals } }
+%token PIPE       "|"  @ { { value: T.TokPipe } }
+%token TICK       "`"  @ { { value: T.TokTick } }
+%token DOT        "."  @ { { value: T.TokDot } }
+%token COMMA      ","  @ { { value: T.TokComma } }
+%token UNDERSCORE "_"  @ { { value: T.TokUnderscore } }
+%token BACKSLASH  "\\" @ { { value: T.TokBackslash } }
+%token AT         "@"  @ { { value: T.TokAt } }
+%token FORALL     "forall" @ { { value: T.TokForall _ } }
+%token ARROWNAME  "(->)"   @ { { value: T.TokSymbolArrow _ } }
 
-%token { T.Ident } LOWER          "a name"                  { T.TokLower $$ }
-%token { T.Qual }  QUAL_LOWER     "a qualified name"        { T.TokQualLower $$ }
-%token { T.Ident } UPPER          "a constructor"           { T.TokUpper $$ }
-%token { T.Qual }  QUAL_UPPER     "a qualified constructor" { T.TokQualUpper $$ }
-%token { T.Ident } SYMBOL         "a symbol"                { T.TokSymbol $$ }
-%token { T.Qual }  QUAL_SYMBOL    "a qualified symbol"      { T.TokQualSymbol $$ }
-%token { T.Ident } OPERATOR       "an operator"             { T.TokOperator $$ }
-%token { T.Qual }  QUAL_OPERATOR  "a qualified operator"    { T.TokQualOperator $$ }
-%token { T.Ident } LIT_HOLE       "a hole"                  { T.TokHole $$ }
-%token { T.Lit Char }   LIT_CHAR       "a character" { T.TokChar $$ }
-%token { T.Lit String } LIT_STRING     "a string"    { T.TokString $$ }
-%token { T.Lit String } LIT_RAW_STRING "a string"    { T.TokRawString $$ }
-%token { T.Lit Int }    LIT_INT        "an integer"  { T.TokInt $$ }
-%token { T.Lit Number } LIT_NUMBER     "a number"    { T.TokNumber $$ }
+-- `<=` has no token of its own: it is an operator whose name happens to be
+-- that, in either of two spellings. Upstream tells them apart with a pattern
+-- guard; two terminals is what that becomes here, and the rules take either.
+%token LFATARROW  "<=" @ { { value: T.TokOperator Nothing "<=" } }
+%token LFATARROWU "<=" @ { { value: T.TokOperator Nothing "\x21D0" } }
 
+-- Operators and symbols the grammar names one by one, before the catch-alls.
+%token COLON  ":"    @ { { value: T.TokOperator Nothing ":" } }
+%token MINUS  "-"    @ { { value: T.TokOperator Nothing "-" } }
+%token DOTDOT "(..)" @ { { value: T.TokSymbolName Nothing ".." } }
+
+-- Keywords, before `LOWER`. `do` and `ado` may be qualified, so each has a
+-- terminal for the qualified spelling declared after the plain one.
+%token AS       "as"       @ { { value: T.TokLowerName Nothing "as" } }
+%token CASE     "case"     @ { { value: T.TokLowerName Nothing "case" } }
+%token CLASS    "class"    @ { { value: T.TokLowerName Nothing "class" } }
+%token DATA     "data"     @ { { value: T.TokLowerName Nothing "data" } }
+%token DERIVE   "derive"   @ { { value: T.TokLowerName Nothing "derive" } }
+%token DO       "do"       @ { { value: T.TokLowerName Nothing "do" } }
+%token QUAL_DO  "do"       @ { { value: T.TokLowerName _ "do" } }
+%token ADO      "ado"      @ { { value: T.TokLowerName Nothing "ado" } }
+%token QUAL_ADO "ado"      @ { { value: T.TokLowerName _ "ado" } }
+%token ELSE     "else"     @ { { value: T.TokLowerName Nothing "else" } }
+%token FALSE    "false"    @ { { value: T.TokLowerName Nothing "false" } }
+%token FOREIGN  "foreign"  @ { { value: T.TokLowerName Nothing "foreign" } }
+%token HIDING   "hiding"   @ { { value: T.TokLowerName Nothing "hiding" } }
+%token IMPORT   "import"   @ { { value: T.TokLowerName Nothing "import" } }
+%token IF       "if"       @ { { value: T.TokLowerName Nothing "if" } }
+%token IN       "in"       @ { { value: T.TokLowerName Nothing "in" } }
+%token INFIX    "infix"    @ { { value: T.TokLowerName Nothing "infix" } }
+%token INFIXL   "infixl"   @ { { value: T.TokLowerName Nothing "infixl" } }
+%token INFIXR   "infixr"   @ { { value: T.TokLowerName Nothing "infixr" } }
+%token INSTANCE "instance" @ { { value: T.TokLowerName Nothing "instance" } }
+%token LET      "let"      @ { { value: T.TokLowerName Nothing "let" } }
+%token MODULE   "module"   @ { { value: T.TokLowerName Nothing "module" } }
+%token NEWTYPE  "newtype"  @ { { value: T.TokLowerName Nothing "newtype" } }
+%token NOMINAL  "nominal"  @ { { value: T.TokLowerName Nothing "nominal" } }
+%token OF       "of"       @ { { value: T.TokLowerName Nothing "of" } }
+%token PHANTOM  "phantom"  @ { { value: T.TokLowerName Nothing "phantom" } }
+%token REPRESENTATIONAL "representational" @ { { value: T.TokLowerName Nothing "representational" } }
+%token ROLE     "role"     @ { { value: T.TokLowerName Nothing "role" } }
+%token THEN     "then"     @ { { value: T.TokLowerName Nothing "then" } }
+%token TRUE     "true"     @ { { value: T.TokLowerName Nothing "true" } }
+%token TYPE     "type"     @ { { value: T.TokLowerName Nothing "type" } }
+%token WHERE    "where"    @ { { value: T.TokLowerName Nothing "where" } }
+
+%token LOWER          "a name"                  @ { { value: T.TokLowerName Nothing _ } }
+%token QUAL_LOWER     "a qualified name"        @ { { value: T.TokLowerName _ _ } }
+%token UPPER          "a constructor"           @ { { value: T.TokUpperName Nothing _ } }
+%token QUAL_UPPER     "a qualified constructor" @ { { value: T.TokUpperName _ _ } }
+%token SYMBOL         "a symbol"                @ { { value: T.TokSymbolName Nothing _ } }
+%token QUAL_SYMBOL    "a qualified symbol"      @ { { value: T.TokSymbolName _ _ } }
+%token OPERATOR       "an operator"             @ { { value: T.TokOperator Nothing _ } }
+%token QUAL_OPERATOR  "a qualified operator"    @ { { value: T.TokOperator _ _ } }
+%token LIT_HOLE       "a hole"      @ { { value: T.TokHole _ } }
+%token LIT_CHAR       "a character" @ { { value: T.TokChar _ _ } }
+%token LIT_STRING     "a string"    @ { { value: T.TokString _ _ } }
+%token LIT_RAW_STRING "a string"    @ { { value: T.TokRawString _ } }
+%token LIT_INT        "an integer"  @ { { value: T.TokInt _ _ } }
+%token LIT_NUMBER     "a number"    @ { { value: T.TokNumber _ _ } }
 
 %start { C.Module } parseModule
 %start { C.Type } parseType
@@ -214,98 +214,106 @@ layout(a, s):
 
 --------------------------------------------------------------------------------
 -- Names
+--
+-- Every terminal here carries its own token, so every one of these is the same
+-- thing said twice: `C.name` for a name the grammar wants plain, `C.qualName`
+-- for one it will let carry a module qualifier. What the token *is* -- an
+-- identifier, a keyword being used as one, an operator -- the token already
+-- knows, and so does the range it was written at.
 --------------------------------------------------------------------------------
 
 moduleName:
-  | n = UPPER      { C.unqualified n }
-  | n = QUAL_UPPER { C.qualified n }
+  | t = UPPER      { C.qualName t }
+  | t = QUAL_UPPER { C.qualName t }
 
 qualProperName:
-  | n = UPPER      { C.unqualified n }
-  | n = QUAL_UPPER { C.qualified n }
+  | t = UPPER      { C.qualName t }
+  | t = QUAL_UPPER { C.qualName t }
 
 properName:
-  | n = UPPER { C.name n }
+  | t = UPPER { C.name t }
 
 qualIdent:
-  | n = LOWER        { C.unqualified n }
-  | n = QUAL_LOWER   { C.qualified n }
-  | AS               { C.keywordQual "as" }
-  | HIDING           { C.keywordQual "hiding" }
-  | ROLE             { C.keywordQual "role" }
-  | NOMINAL          { C.keywordQual "nominal" }
-  | REPRESENTATIONAL { C.keywordQual "representational" }
-  | PHANTOM          { C.keywordQual "phantom" }
+  | t = LOWER        { C.qualName t }
+  | t = QUAL_LOWER   { C.qualName t }
+  | t = AS           { C.qualName t }
+  | t = HIDING       { C.qualName t }
+  | t = ROLE         { C.qualName t }
+  | t = NOMINAL      { C.qualName t }
+  | t = REPRESENTATIONAL { C.qualName t }
+  | t = PHANTOM      { C.qualName t }
 
 ident:
-  | n = LOWER        { C.name n }
-  | AS               { C.keyword "as" }
-  | HIDING           { C.keyword "hiding" }
-  | ROLE             { C.keyword "role" }
-  | NOMINAL          { C.keyword "nominal" }
-  | REPRESENTATIONAL { C.keyword "representational" }
-  | PHANTOM          { C.keyword "phantom" }
+  | t = LOWER        { C.name t }
+  | t = AS           { C.name t }
+  | t = HIDING       { C.name t }
+  | t = ROLE         { C.name t }
+  | t = NOMINAL      { C.name t }
+  | t = REPRESENTATIONAL { C.name t }
+  | t = PHANTOM      { C.name t }
 
 qualOp:
-  | n = OPERATOR      { C.unqualified n }
-  | n = QUAL_OPERATOR { C.qualified n }
-  | LFATARROW         { C.keywordQual "<=" }
-  | MINUS             { C.keywordQual "-" }
-  | COLON             { C.keywordQual ":" }
+  | t = OPERATOR      { C.qualOperator t }
+  | t = QUAL_OPERATOR { C.qualOperator t }
+  | t = LFATARROW     { C.qualOperator t }
+  | t = LFATARROWU    { C.qualOperator t }
+  | t = MINUS         { C.qualOperator t }
+  | t = COLON         { C.qualOperator t }
 
 op:
-  | n = OPERATOR { C.name n }
-  | LFATARROW    { C.keyword "<=" }
-  | MINUS        { C.keyword "-" }
-  | COLON        { C.keyword ":" }
+  | t = OPERATOR   { C.operator t }
+  | t = LFATARROW  { C.operator t }
+  | t = LFATARROWU { C.operator t }
+  | t = MINUS      { C.operator t }
+  | t = COLON      { C.operator t }
 
 qualSymbol:
-  | n = SYMBOL      { C.unqualified n }
-  | n = QUAL_SYMBOL { C.qualified n }
-  | DOTDOT          { C.keywordQual ".." }
+  | t = SYMBOL      { C.qualName t }
+  | t = QUAL_SYMBOL { C.qualName t }
+  | t = DOTDOT      { C.qualName t }
 
 symbol:
-  | n = SYMBOL { C.name n }
-  | DOTDOT     { C.keyword ".." }
+  | t = SYMBOL { C.name t }
+  | t = DOTDOT { C.name t }
 
 hole:
-  | n = LIT_HOLE { C.name n }
+  | t = LIT_HOLE { C.name t }
 
 label:
-  | n = LOWER          { C.name n }
-  | s = LIT_STRING     { C.stringLabel s }
-  | s = LIT_RAW_STRING { C.stringLabel s }
-  | ADO      { C.keyword "ado" }
-  | AS       { C.keyword "as" }
-  | CASE     { C.keyword "case" }
-  | CLASS    { C.keyword "class" }
-  | DATA     { C.keyword "data" }
-  | DERIVE   { C.keyword "derive" }
-  | DO       { C.keyword "do" }
-  | ELSE     { C.keyword "else" }
-  | FALSE    { C.keyword "false" }
-  | FORALL   { C.keyword "forall" }
-  | FOREIGN  { C.keyword "foreign" }
-  | HIDING   { C.keyword "hiding" }
-  | IMPORT   { C.keyword "import" }
-  | IF       { C.keyword "if" }
-  | IN       { C.keyword "in" }
-  | INFIX    { C.keyword "infix" }
-  | INFIXL   { C.keyword "infixl" }
-  | INFIXR   { C.keyword "infixr" }
-  | INSTANCE { C.keyword "instance" }
-  | LET      { C.keyword "let" }
-  | MODULE   { C.keyword "module" }
-  | NEWTYPE  { C.keyword "newtype" }
-  | NOMINAL  { C.keyword "nominal" }
-  | OF       { C.keyword "of" }
-  | PHANTOM  { C.keyword "phantom" }
-  | REPRESENTATIONAL { C.keyword "representational" }
-  | ROLE     { C.keyword "role" }
-  | THEN     { C.keyword "then" }
-  | TRUE     { C.keyword "true" }
-  | TYPE     { C.keyword "type" }
-  | WHERE    { C.keyword "where" }
+  | t = LOWER          { C.name t }
+  | t = LIT_STRING     { C.name t }
+  | t = LIT_RAW_STRING { C.name t }
+  | t = ADO      { C.name t }
+  | t = AS       { C.name t }
+  | t = CASE     { C.name t }
+  | t = CLASS    { C.name t }
+  | t = DATA     { C.name t }
+  | t = DERIVE   { C.name t }
+  | t = DO       { C.name t }
+  | t = ELSE     { C.name t }
+  | t = FALSE    { C.name t }
+  | t = FORALL   { C.name t }
+  | t = FOREIGN  { C.name t }
+  | t = HIDING   { C.name t }
+  | t = IMPORT   { C.name t }
+  | t = IF       { C.name t }
+  | t = IN       { C.name t }
+  | t = INFIX    { C.name t }
+  | t = INFIXL   { C.name t }
+  | t = INFIXR   { C.name t }
+  | t = INSTANCE { C.name t }
+  | t = LET      { C.name t }
+  | t = MODULE   { C.name t }
+  | t = NEWTYPE  { C.name t }
+  | t = NOMINAL  { C.name t }
+  | t = OF       { C.name t }
+  | t = PHANTOM  { C.name t }
+  | t = REPRESENTATIONAL { C.name t }
+  | t = ROLE     { C.name t }
+  | t = THEN     { C.name t }
+  | t = TRUE     { C.name t }
+  | t = TYPE     { C.name t }
+  | t = WHERE    { C.name t }
 
 --------------------------------------------------------------------------------
 -- Types
@@ -330,7 +338,7 @@ type3:
 
 type4:
   | t = type5 %shift   { t }
-  | MINUS i = LIT_INT  { C.TypeInt (negate (C.litValue i)) }
+  | MINUS i = LIT_INT  { C.TypeInt (negate (C.intValue i)) }
 
 type5:
   | t = typeAtom             { t }
@@ -341,8 +349,8 @@ typeAtom:
   | n = ident           { C.TypeVar n }
   | n = qualProperName  { C.TypeConstructor n }
   | n = qualSymbol      { C.TypeOpName n }
-  | s = LIT_STRING      { C.TypeString (C.litValue s) }
-  | i = LIT_INT         { C.TypeInt (C.litValue i) }
+  | s = LIT_STRING      { C.TypeString (C.stringValue s) }
+  | i = LIT_INT         { C.TypeInt (C.intValue i) }
   | n = hole            { C.TypeHole n }
   | ARROWNAME           { C.TypeArrowName }
   | LBRACE r = row RBRACE    { C.TypeRecord r }
@@ -357,7 +365,7 @@ typeKindedAtom:
   | UNDERSCORE          { C.TypeWildcard }
   | n = qualProperName  { C.TypeConstructor n }
   | n = qualSymbol      { C.TypeOpName n }
-  | i = LIT_INT         { C.TypeInt (C.litValue i) }
+  | i = LIT_INT         { C.TypeInt (C.intValue i) }
   | n = hole            { C.TypeHole n }
   | LBRACE r = row RBRACE    { C.TypeRecord r }
   | LPAREN r = row RPAREN    { C.TypeRow r }
@@ -454,11 +462,11 @@ exprAtom:
   | n = qualSymbol      { C.ExprOpName n }
   | TRUE                { C.ExprBoolean true }
   | FALSE               { C.ExprBoolean false }
-  | c = LIT_CHAR        { C.ExprChar (C.litValue c) }
-  | s = LIT_STRING      { C.ExprString (C.litValue s) }
-  | s = LIT_RAW_STRING  { C.ExprString (C.litValue s) }
-  | i = LIT_INT         { C.ExprInt (C.litValue i) }
-  | d = LIT_NUMBER      { C.ExprNumber (C.litValue d) }
+  | c = LIT_CHAR        { C.ExprChar (C.charValue c) }
+  | s = LIT_STRING      { C.ExprString (C.stringValue s) }
+  | s = LIT_RAW_STRING  { C.ExprString (C.stringValue s) }
+  | i = LIT_INT         { C.ExprInt (C.intValue i) }
+  | d = LIT_NUMBER      { C.ExprNumber (C.numberValue d) }
   | es = delimited(LSQUARE, expr, COMMA, RSQUARE)         { C.ExprArray es }
   | ls = delimited(LBRACE, recordLabel, COMMA, RBRACE)    { C.ExprRecord ls }
   | LPAREN e = expr RPAREN                                { C.ExprParens e }
@@ -566,8 +574,8 @@ binder1:
 
 binder2:
   | bs = binderAtoms1     { C.binderConstructor bs }
-  | MINUS i = LIT_INT     { C.BinderInt (negate (C.litValue i)) }
-  | MINUS d = LIT_NUMBER  { C.BinderNumber (negate (C.litValue d)) }
+  | MINUS i = LIT_INT     { C.BinderInt (negate (C.intValue i)) }
+  | MINUS d = LIT_NUMBER  { C.BinderNumber (negate (C.numberValue d)) }
 
 binderAtom:
   | UNDERSCORE                    { C.BinderWildcard }
@@ -576,11 +584,11 @@ binderAtom:
   | n = qualProperName            { C.BinderConstructor n [] }
   | TRUE                          { C.BinderBoolean true }
   | FALSE                         { C.BinderBoolean false }
-  | c = LIT_CHAR                  { C.BinderChar (C.litValue c) }
-  | s = LIT_STRING                { C.BinderString (C.litValue s) }
-  | s = LIT_RAW_STRING            { C.BinderString (C.litValue s) }
-  | i = LIT_INT                   { C.BinderInt (C.litValue i) }
-  | d = LIT_NUMBER                { C.BinderNumber (C.litValue d) }
+  | c = LIT_CHAR                  { C.BinderChar (C.charValue c) }
+  | s = LIT_STRING                { C.BinderString (C.stringValue s) }
+  | s = LIT_RAW_STRING            { C.BinderString (C.stringValue s) }
+  | i = LIT_INT                   { C.BinderInt (C.intValue i) }
+  | d = LIT_NUMBER                { C.BinderNumber (C.numberValue d) }
   | bs = delimited(LSQUARE, binder, COMMA, RSQUARE)      { C.BinderArray bs }
   | bs = delimited(LBRACE, recordBinder, COMMA, RBRACE)  { C.BinderRecord bs }
   | LPAREN b = binder RPAREN                             { C.BinderParens b }
@@ -649,7 +657,7 @@ importList:
 
 importQualified:
   |                     { Nothing }
-  | AS n = moduleName   { Just (C.qualName n) }
+  | AS n = moduleName   { Just (C.plain n) }
 
 imports1:
   | is = manySep(import, COMMA) { is }
@@ -726,6 +734,8 @@ classHeadPrefix:
       { C.classHead [] n ts fd }
   | CLASS cs = constraints LFATARROW n = qualProperName ts = typeAtoms fd = fundeps
       { C.classHead cs n ts fd }
+  | CLASS cs = constraints LFATARROWU n = qualProperName ts = typeAtoms fd = fundeps
+      { C.classHead cs n ts fd }
 
 fundeps:
   |                              { Nothing }
@@ -781,9 +791,9 @@ instBindings:
   | bs = layout(instBinding, VSEP) { bs }
 
 fixity:
-  | k = infix i = LIT_INT n = qualIdent AS o = op       { C.FixityValue k (C.litValue i) n o }
-  | k = infix i = LIT_INT n = qualProperName AS o = op  { C.FixityValue k (C.litValue i) n o }
-  | k = infix i = LIT_INT TYPE n = qualProperName AS o = op { C.FixityType k (C.litValue i) n o }
+  | k = infix i = LIT_INT n = qualIdent AS o = op       { C.FixityValue k (C.intValue i) n o }
+  | k = infix i = LIT_INT n = qualProperName AS o = op  { C.FixityValue k (C.intValue i) n o }
+  | k = infix i = LIT_INT TYPE n = qualProperName AS o = op { C.FixityType k (C.intValue i) n o }
 
 infix:
   | INFIX  { C.Infix }

@@ -1,15 +1,18 @@
--- | How fast the generated PureScript parser is, on a token stream and nothing
--- | else.
+-- | The generated parser and the hand-written one, over the same file.
 -- |
--- | There is no lexer here on purpose. What is being measured is the parser --
--- | the table lookups, the stack, the semantic actions -- and a lexer in front
--- | of it would put its own cost in the same number. The tokens are built once,
--- | before the clock starts, and the same array is parsed every round.
+-- | Both are given source text and both lex it with
+-- | `purescript-language-cst-parser`'s lexer, so what differs between the two
+-- | numbers is the parsing and the tree. The lexer is timed on its own as well,
+-- | because it is in both of the others.
 -- |
--- | Run it with:
+-- | The two are not doing the same amount of work, and that is worth stating
+-- | before the numbers are read. `PureScript.CST.parseModule` builds a tree
+-- | that keeps every token it read, comments and all, because a formatter has
+-- | to put the source back. The tree here keeps names, shapes and positions,
+-- | and drops the punctuation.
 -- |
 -- | ```sh
--- | spago test -p puppy-example-purescript -m Test.Puppy.Purs.Bench --pure
+-- | spago test -p puppy-example-purescript -m Test.Puppy.Purs.Bench --pure -- FILE
 -- | ```
 module Test.Puppy.Purs.Bench where
 
@@ -20,119 +23,161 @@ import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..), isRight)
 import Data.Foldable (for_)
 import Data.Int as Int
+import Data.Maybe (Maybe(..))
 import Data.Number.Format as Format
+import Data.String.CodeUnits as SCU
 import Data.Time.Duration (Milliseconds(..))
 import Effect (Effect)
 import Effect.Console as Console
 import Effect.Now (now)
 import Effect.Ref as Ref
-import Puppy.Purs.Parser as P
-import Puppy.Purs.Token as T
+import Node.Encoding (Encoding(..))
+import Node.FS.Sync as FS
+import Node.Process as Process
+import Puppy.Purs.Run as Run
+import PureScript.CST as CST
+import PureScript.CST.Lexer as Lexer
+import PureScript.CST.TokenStream (TokenStep(..))
+import PureScript.CST.TokenStream as TokenStream
 
-at :: T.Pos
-at = { line: 1, column: 1 }
-
-lo :: String -> T.Token
-lo name = T.TokLower { pos: at, name }
-
-up :: String -> T.Token
-up name = T.TokUpper { pos: at, name }
-
-opr :: String -> T.Token
-opr name = T.TokOperator { pos: at, name }
-
-int :: Int -> T.Token
-int value = T.TokInt { pos: at, raw: show value, value }
-
--- | One declaration pair, the shape most of a real module is made of: a
--- | signature and a binding whose body mixes application with operators.
+-- | How long one sample should take, in milliseconds.
 -- |
--- | ```purescript
--- | fooN :: Int -> Int
--- | fooN x = f x <> g 1 <> h 2
--- | ```
-declaration :: Int -> Array T.Token
-declaration i =
-  [ lo name
-  , T.TokDoubleColon at
-  , up "Int"
-  , T.TokRightArrow at
-  , up "Int"
-  , T.TokLayoutSep at
-  , lo name
-  , lo "x"
-  , T.TokEquals at
-  , lo "f"
-  , lo "x"
-  , opr "<>"
-  , lo "g"
-  , int 1
-  , opr "<>"
-  , lo "h"
-  , int 2
-  ]
-  where
-  name = "foo" <> show i
+-- | Not a number of repetitions: a time to reach. The clock here is
+-- | `Date.now`, which counts whole milliseconds, so a single parse of a small
+-- | file is a handful of ticks and the difference between two of them is
+-- | mostly rounding. A sample is therefore a run of repetitions long enough to
+-- | be worth timing, divided back down afterwards.
+-- |
+-- | How many repetitions that is comes from `calibrate`, which measures rather
+-- | than estimates: it runs the work, and if the run was short it asks for
+-- | more and runs it again. That happens twice, so the count is settled on
+-- | code the engine has already warmed rather than on a cold run -- a cold run
+-- | says the work costs more than it does, and asks for too few repetitions to
+-- | reach this figure once it is warm. `calibrate` aims a little over it for
+-- | the same reason, and each sample's length is reported so that the floor
+-- | can be seen to have held.
+sampleMillis :: Number
+sampleMillis = 200.0
 
--- | A module of `n` declaration pairs, with the header and the layout tokens a
--- | lexer would have inserted.
-moduleOf :: Int -> Array T.Token
-moduleOf n =
-  [ lo "module", up "Bench", lo "where", T.TokLayoutStart at ]
-    <> Array.intercalate [ T.TokLayoutSep at ]
-      (map declaration (Array.range 1 n))
-    <> [ T.TokLayoutEnd at ]
+rounds :: Int
+rounds = 10
 
 main :: Effect Unit
 main = do
-  let
-    declarations = 500
-    rounds = 20
-    input = moduleOf declarations
-    tokens = Array.length input
+  args <- Array.drop 2 <$> Process.argv
+  case Array.head args of
+    Nothing -> die "a file to parse is required"
+    Just path -> do
+      source <- FS.readTextFile UTF8 path
 
-  -- Fail loudly rather than timing an error path.
-  case P.parseModule input of
-    Left err -> Console.error
-      ("the input does not parse: token " <> show err.position)
-    Right _ -> do
-      Console.log
-        ( "parsing " <> show tokens <> " tokens ("
-            <> show declarations
-            <> " declarations), "
-            <> show rounds
-            <> " rounds"
-        )
+      -- Nothing is timed until both sides are known to be reading the same
+      -- thing. A parser that rejects the input would otherwise be timed on how
+      -- quickly it gives up, and come out ahead for it.
+      unless (lexes source) (die (path <> ": the lexer does not read it"))
+      unless (puppyParses source) (die (path <> ": puppy does not parse it"))
+      unless (cstParses source) (die (path <> ": language-cst-parser does not parse it"))
 
-      best <- Ref.new infinity
-      total <- Ref.new 0.0
-
-      for_ (Array.range 1 rounds) \_ -> do
-        Milliseconds start <- unInstant <$> now
-        -- Kept and looked at, so that nothing is free to drop the work.
-        let answered = isRight (P.parseModule input)
-        Milliseconds end <- unInstant <$> now
-        let elapsed = if answered then end - start else 0.0
-        Ref.modify_ (min elapsed) best
-        Ref.modify_ (_ + elapsed) total
-
-      fastest <- Ref.read best
-      summed <- Ref.read total
-      Console.log
-        ( "  best " <> ms fastest
-            <> "   mean "
-            <> ms (summed / Int.toNumber rounds)
-            <> "   "
-            <> rate tokens fastest
-        )
+      Console.log (path <> ": " <> show (SCU.length source) <> " characters")
+      time "lex only           " \_ -> lexes source
+      time "puppy              " \_ -> puppyParses source
+      time "language-cst-parser" \_ -> cstParses source
   where
+  die message = do
+    Console.error message
+    Process.exit' 1
+
+  lexes source = walk (Lexer.lexModule source)
+
+  walk stream = case TokenStream.step stream of
+    TokenEOF _ _ -> true
+    TokenError _ _ _ _ -> false
+    TokenCons _ _ rest _ -> walk rest
+
+  puppyParses source = case Run.parseModule source of
+    Right inner -> isRight inner
+    Left _ -> false
+
+  -- Only a clean parse counts. `ParseSucceededWithErrors` means the recovery
+  -- path ran, which is neither the same work nor the same answer.
+  cstParses source = case CST.parseModule source of
+    CST.ParseSucceeded _ -> true
+    _ -> false
+
+  time name work = do
+    -- Calibrated twice on purpose. The first pass is also the warm-up: it runs
+    -- the work until a run of it is long enough to time, by which point
+    -- whatever the engine was going to do to the code it has done. The second
+    -- pass starts from that answer and grows it again if the warmed code turned
+    -- out to be quicker -- which is the whole reason one untimed trial is not
+    -- enough, since a trial that includes the cold run says the work costs more
+    -- than it does and asks for too few repetitions.
+    firstGuess <- calibrate 1 work
+    per <- calibrate firstGuess work
+
+    best <- Ref.new infinity
+    total <- Ref.new 0.0
+    shortest <- Ref.new infinity
+    for_ (Array.range 1 rounds) \_ -> do
+      elapsed <- sample per work
+      Ref.modify_ (min elapsed) shortest
+      let each = elapsed / Int.toNumber per
+      Ref.modify_ (min each) best
+      Ref.modify_ (_ + each) total
+
+    fastest <- Ref.read best
+    summed <- Ref.read total
+    leanest <- Ref.read shortest
+    Console.log
+      ( "  " <> name <> "   best " <> ms fastest
+          <> "   mean "
+          <> ms (summed / Int.toNumber rounds)
+          <> "   ("
+          <> show per
+          <> " per sample, shortest sample "
+          <> ms leanest
+          <> ", "
+          <> show rounds
+          <> " samples)"
+      )
+
+  -- How long `per` repetitions take.
+  sample per work = do
+    Milliseconds start <- unInstant <$> now
+    let ran = repeat per work
+    Milliseconds end <- unInstant <$> now
+    pure (if ran then end - start else infinity)
+
+  -- The smallest number of repetitions that takes at least `sampleMillis`,
+  -- found by measuring rather than by dividing an estimate.
+  -- Aimed a little over the floor, because a sample taken later can be a
+  -- little quicker than the one that settled the count, and a floor that only
+  -- just held is a floor that does not.
+  calibrate from work = go from
+    where
+    target = sampleMillis * 1.1
+
+    go per = do
+      elapsed <- sample per work
+      if elapsed >= target then pure per
+      else go (grow per elapsed)
+
+    -- Always at least one more, never more than eight times as many: a run
+    -- that took no measurable time would otherwise ask for a number with no
+    -- relation to anything.
+    grow per elapsed =
+      max (per + 1)
+        ( min (per * 8)
+            (Int.ceil (Int.toNumber per * target / max 0.25 elapsed))
+        )
+
+  -- The answer is carried through so that nothing is free to decide the work
+  -- was not needed.
+  repeat n work = go n true
+    where
+    go left ok
+      | left <= 0 = ok
+      | otherwise = go (left - 1) (ok && work unit)
+
   infinity = 1.0e30
 
-  ms n = Format.toStringWith (Format.fixed 2) n <> "ms"
-
-  rate tokens elapsed
-    | elapsed <= 0.0 = "too fast to rate"
-    | otherwise =
-        Format.toStringWith (Format.fixed 0)
-          (Int.toNumber tokens / elapsed * 1000.0)
-          <> " tokens/s"
+  ms n = Format.toStringWith (Format.fixed 3) n <> "ms"

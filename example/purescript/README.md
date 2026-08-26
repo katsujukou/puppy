@@ -11,11 +11,12 @@ anything else.
 
 ```
 example/purescript/
-  src/Puppy/Purs/Token.purs    the token type, hand written
-  src/Puppy/Purs/CST.purs      the tree, hand written
   src/Puppy/Purs/Parser.pursy  the grammar
   src/Puppy/Purs/Parser.purs   what Puppy made of it
-  test/Test/Puppy/Purs.purs    token streams in, trees out
+  src/Puppy/Purs/CST.purs      the tree it builds, hand written
+  src/Puppy/Purs/Run.purs      lexer in, tree out
+  test/Test/Puppy/Purs.purs    source text in, trees out
+  test/Test/Puppy/Purs/Bench.purs   the two parsers, same file
 ```
 
 Regenerating:
@@ -30,18 +31,64 @@ spago run -p puppy-cli -- example/purescript/src/Puppy/Purs/Parser.pursy \
 | | |
 | --- | ---: |
 | `Parser.y` | 811 lines |
-| `Parser.pursy` | 815 lines |
-| Generated module | 4,859 lines |
-| LR states | 641 |
-| Terminals / productions | 74 / 396 |
+| `Parser.pursy` | 830 lines |
+| Generated module | 478 KB |
+| LR states | 647 |
+| Terminals / productions | 75 / 399 |
 | Time to generate | ~2s |
-| Conflicts | 0 unsettled; 68 settled by `%shift` |
+| Conflicts | 0 unsettled; 70 settled by `%shift` |
 | Warnings from the PureScript compiler on the generated module | 0 |
 
 The grammar is all there: types, expressions, binders, declarations, classes,
-instances, imports, exports, fixity and roles. Twenty-two tests feed it token
-streams and check the trees, including `do` blocks, record updates, class heads
-with superclasses and whole modules.
+instances, imports, exports, fixity and roles.
+
+It reads real source. The tokens come from
+[`purescript-language-cst-parser`](https://github.com/natefaubion/purescript-language-cst-parser)
+— its lexer, its offside rule, its `SourceToken` — and `Puppy.Purs.Run` is the
+twenty lines that join the two. Nothing here lexes and nothing here works out
+where a block begins; Puppy does neither, and this is what borrowing them looks
+like.
+
+```purescript
+parseModule :: String -> Parsed C.Module
+parseModule = runWith lexModule P.parseModuleFrom
+```
+
+## Against the hand-written parser
+
+Both sides lex with the same lexer, so the cost of that is in both numbers and
+is measured on its own as well.
+
+| file | lex | puppy | language-cst-parser |
+| --- | ---: | ---: | ---: |
+| `Codegen.purs` (38 KB) | 7.6ms | 18.5ms | 14.9ms |
+| `Expand.purs` (35 KB) | 7.7ms | 18.3ms | 14.7ms |
+| `Driver.purs` (12 KB) | 1.6ms | 3.6ms | 2.9ms |
+
+Best of ten samples. A sample is however many repetitions come to at least
+200ms, divided back down: `Date.now` counts whole milliseconds, and a single
+parse of a small file is few enough of them that the difference between two
+figures would otherwise be mostly rounding. How many repetitions that is comes
+from measuring rather than estimating -- twice, so that the count is settled on
+warm code rather than on the cold run -- and the benchmark prints the shortest
+sample it took, so that the floor can be seen to have held.
+
+End to end Puppy takes about a quarter longer. Taking the lexer out — which is
+approximate, since the two hold the tokens differently — the parsing itself is
+roughly 10.8ms against 7.2ms on the larger files, about half as long again.
+
+Two things to hold against that, in opposite directions. The tree here is
+smaller: `PureScript.CST` keeps every token it read, comments and all, because
+a formatter has to put the source back, and this one keeps names, shapes and
+positions. So Puppy is doing less work for that half. On the other hand a
+generated table-driven parser landing in the same range as a hand-written
+combinator parser that has been tuned for years is closer than the shape of the
+two would suggest.
+
+Neither side is doing error recovery here: `language-cst-parser` can carry on
+past a failure and hand back a tree with error nodes in it, and the benchmark
+counts only a clean `ParseSucceeded` so that the recovery path is not being
+timed instead.
 
 ## Where the upstream grammar is not LR(1)
 
@@ -108,32 +155,46 @@ and changing what they mean everywhere else.
 the grammar settle 67 of the 68; the last one was a genuine ambiguity of this
 port's own — `(Foo a)` after `class` is both a parenthesised constraint and a
 one-element list of constraints — and is settled by an eighth. The action table
-is byte-for-byte what it was, and the 22 tests are unchanged.
+is byte-for-byte what it was, and the tests the port had at the time were
+unchanged.
 
-### 2. One `$$` per token
+### 2. ~~One `$$` per token~~ — `@` added
 
-A `%token` pattern gets one hole, so a terminal can capture one value out of
-its token. Upstream binds the whole `SourceToken` and destructures it in
-Haskell, so its rules reach the position and the payload both.
+A `%token` pattern gets one hole, so a terminal could capture one value out of
+its token and no more. That is fine for `T.TokInt _ $$` and useless for a
+pattern that has already spent itself saying which token it is: `TokLowerName
+Nothing "as"` pins the name down, and pinning it down is what leaves nowhere
+for a `$$` to stand.
 
-Two things follow, and both shaped `Token.purs`:
+The port paid for it twice. The token type had to keep the source position
+*inside* each payload rather than in an enclosing constructor, and qualified
+and unqualified names had to be separate constructors — because in both cases
+the pattern that pins one field down is the pattern that can no longer capture
+the record it is in. And a keyword the grammar also accepts as an identifier —
+`as`, `role`, `hiding` — reached the tree with no position at all, rebuilt from
+a constant.
 
-- The source position has to live *inside* each payload rather than in an
-  enclosing `Token pos lexeme`, because a pattern `Token _ (TokLower $$)` can
-  have the name or the position and not both.
-- Qualified and unqualified names have to be separate constructors. Upstream
-  writes `TokLowerName [] _` and `TokLowerName _ _`; here the pattern that pins
-  the qualifier down is the pattern that can no longer capture the record.
+[`@`](../../docs/md/grammar.md#-for-the-whole-token) closed all of it. A
+terminal marked `@` has the whole token for its value, so:
 
-And one thing does not have an answer. A keyword the grammar also accepts as an
-identifier — `as`, `role`, `hiding`, `nominal`, `phantom`,
-`representational` — is matched by `T.TokLower { name: "as" }`, which pins the
-name down and so cannot capture anything. Those names reach the tree without a
-position (`C.keyword`), which is the one place in this port where something the
-source knew is thrown away.
+```plain
+%token AS    "as"     @ { { value: T.TokLowerName Nothing "as" } }
+%token LOWER "a name" @ { { value: T.TokLowerName Nothing _ } }
+%token QUAL_LOWER "a qualified name" @ { { value: T.TokLowerName _ _ } }
+```
 
-**A placeholder for "the token itself", alongside `$$` for a part of it, would
-close this.**
+Every terminal in this grammar is now marked `@`, the hand-written token type
+is gone entirely, and the tree is built out of
+`purescript-language-cst-parser`'s own `SourceToken`. The name rules collapsed
+to one line each:
+
+```plain
+ident:
+  | t = LOWER { C.name t }
+  | t = AS    { C.name t }
+```
+
+Nothing is rebuilt from a constant and nothing loses its position.
 
 ### 3. `%type` cannot be given to a parameterised rule
 
@@ -201,12 +262,17 @@ would.
 
 ## What is not here
 
-- **A lexer, and the layout pass that follows it.** Puppy does not lex, so the
-  tests write layout markers out by hand. Running this on real `.purs` source
-  needs a PureScript lexer and a port of `Language.PureScript.CST.Layout` —
-  which is the arrangement `Puppy.Runtime.Source.transduce` exists for, and a
-  separate piece of work.
-- **Source spans on anything but names.** The tree keeps positions where a
-  token carried one and nowhere else.
-- **Comments.** Upstream threads them through every token so the formatter can
-  put them back.
+- **A lexer, and the offside rule that follows it.** Puppy writes neither, and
+  this borrows both from `purescript-language-cst-parser`. That is the intended
+  arrangement rather than a gap — but it does mean the comparison above is a
+  comparison of parsers and not of front ends.
+- **The same tree.** `PureScript.CST.Types` keeps every token, comment and
+  range, because a formatter needs them; this keeps names, shapes and the
+  position of every name. Building the first from this grammar is what a real
+  compatibility claim would need, and it is a bigger piece of work than the
+  grammar was.
+- **Error recovery.** `PureScript.CST` can carry on past a failure and hand
+  back a tree with error nodes in it. This stops.
+- **A shebang anywhere but a module.** `parseModule` lexes with `lexModule`,
+  which allows for one; the entry points that take a fragment use `lex`, which
+  does not, because a fragment cannot have one.

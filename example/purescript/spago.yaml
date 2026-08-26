@@ -6,21 +6,26 @@ package:
   name: puppy-example-purescript
   dependencies:
     - arrays
+    - either
+    - language-cst-parser
     - maybe
     - prelude
     - puppy-runtime
     - strings
+    - transformers
   test:
     main: Test.Puppy.Purs
     dependencies:
-      - effect
-      - spec
-      - spec-node
-      - tuples
+      - console
       - datetime
+      - effect
+      - foldable-traversable
+      - integers
+      - node-buffer
+      - node-fs
+      - node-process
       - now
       - numbers
       - refs
-      - foldable-traversable
-      - integers
-      - console
+      - spec
+      - spec-node

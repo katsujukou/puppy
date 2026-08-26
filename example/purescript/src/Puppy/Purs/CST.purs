@@ -26,50 +26,86 @@ import Prim hiding (Constraint, Row, Type)
 import Data.Array as Array
 import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
-import Data.Maybe (Maybe(..))
+import Data.Maybe (Maybe(..), isNothing)
 import Data.String.CodeUnits as SCU
-import Puppy.Purs.Token as T
+import PureScript.CST.Types as T
 
 -- | A name and where it was written.
-type Name = { pos :: T.Pos, name :: String }
+-- | A name, and where it was written.
+-- |
+-- | Every terminal in the grammar is marked `@`, so every one of them hands
+-- | its rule the `SourceToken` the lexer made -- and everything below is a way
+-- | of reading one. Nothing is rebuilt from a constant and nothing loses its
+-- | position, which is the difference `@` makes: a pattern that pins a keyword
+-- | down still hands over the token it pinned.
+type Name = { pos :: T.SourcePos, name :: String }
 
 -- | A name that may carry a module qualifier.
-type Qual = { pos :: T.Pos, qualifier :: Array String, name :: String }
+-- | The qualifier is unwrapped to its text. `ModuleName` is a newtype without a
+-- | `Show`, and this tree derives one for every node so that a failing test can
+-- | say what it got.
+type Qual = { pos :: T.SourcePos, qualifier :: Maybe String, name :: String }
 
-nowhere :: T.Pos
-nowhere = { line: 0, column: 0 }
-
-name :: T.Ident -> Name
-name t = { pos: t.pos, name: t.name }
-
-unqualified :: T.Ident -> Qual
-unqualified t = { pos: t.pos, qualifier: [], name: t.name }
-
-qualified :: T.Qual -> Qual
-qualified t = { pos: t.pos, qualifier: t.qualifier, name: t.name }
-
-qualName :: Qual -> Name
-qualName q = { pos: q.pos, name: q.name }
-
-litValue :: forall a. T.Lit a -> a
-litValue = _.value
-
--- | A keyword standing in for an identifier -- `as`, `role`, `hiding` and the
--- | rest of the ones PureScript lets you use as names.
+-- | The text a token stands for, whatever kind of token it is.
 -- |
--- | The position is lost here, and this is the one place in the port where
--- | something the source knew does not reach the tree. A `%token` pattern gets
--- | one `$$`: the pattern that pins the keyword down is the pattern that can no
--- | longer capture the record it is in, so the terminal arrives carrying
--- | nothing and the name has to be rebuilt from a constant.
-keyword :: String -> Name
-keyword text = { pos: nowhere, name: text }
+-- | A grammar only asks this of terminals whose pattern already said which
+-- | kind they are, so the last arm is for a token no rule can be holding.
+textOf :: T.SourceToken -> String
+textOf t = case t.value of
+  T.TokLowerName _ s -> s
+  T.TokUpperName _ s -> s
+  T.TokSymbolName _ s -> s
+  T.TokOperator _ s -> s
+  T.TokHole s -> s
+  T.TokString _ s -> s
+  T.TokRawString s -> s
+  T.TokSymbolArrow _ -> "(->)"
+  _ -> ""
 
-keywordQual :: String -> Qual
-keywordQual text = { pos: nowhere, qualifier: [], name: text }
+qualifierOf :: T.SourceToken -> Maybe String
+qualifierOf t = map (\(T.ModuleName m) -> m) case t.value of
+  T.TokLowerName q _ -> q
+  T.TokUpperName q _ -> q
+  T.TokSymbolName q _ -> q
+  T.TokOperator q _ -> q
+  _ -> Nothing
 
-stringLabel :: T.Lit String -> Name
-stringLabel t = { pos: t.pos, name: t.value }
+name :: T.SourceToken -> Name
+name t = { pos: t.range.start, name: textOf t }
+
+qualName :: T.SourceToken -> Qual
+qualName t =
+  { pos: t.range.start, qualifier: qualifierOf t, name: textOf t }
+
+-- | A qualified name with its qualifier dropped, for the places that take a
+-- | plain one -- a module's own name, or the name it is imported as.
+plain :: Qual -> Name
+plain q = { pos: q.pos, name: q.name }
+
+-- | An operator, which is a name the grammar reads the same way.
+operator :: T.SourceToken -> Name
+operator = name
+
+qualOperator :: T.SourceToken -> Qual
+qualOperator = qualName
+
+intValue :: T.SourceToken -> Int
+intValue t = case t.value of
+  T.TokInt _ (T.SmallInt n) -> n
+  _ -> 0
+
+numberValue :: T.SourceToken -> Number
+numberValue t = case t.value of
+  T.TokNumber _ n -> n
+  _ -> 0.0
+
+charValue :: T.SourceToken -> Char
+charValue t = case t.value of
+  T.TokChar _ c -> c
+  _ -> '?'
+
+stringValue :: T.SourceToken -> String
+stringValue = textOf
 
 --------------------------------------------------------------------------------
 -- Types
@@ -512,7 +548,7 @@ recordApplyOrUpdate subject fields =
   asUpdate = case _ of
     UpdateOrLabelLeaf l e -> RecordUpdateLeaf l e
     UpdateOrLabelBranch l us -> RecordUpdateBranch l us
-    UpdateOrLabelPun l -> RecordUpdateLeaf l (ExprIdent { pos: l.pos, qualifier: [], name: l.name })
+    UpdateOrLabelPun l -> RecordUpdateLeaf l (ExprIdent { pos: l.pos, qualifier: Nothing, name: l.name })
     UpdateOrLabelField l e -> RecordUpdateLeaf l e
 
 -- | `{ label = value }` in a record literal. Upstream reports it while parsing;
@@ -549,7 +585,7 @@ toBinder :: Expr -> Binder
 toBinder = case _ of
   ExprSection -> BinderWildcard
   ExprIdent q
-    | Array.null q.qualifier -> BinderVar { pos: q.pos, name: q.name }
+    | isNothing q.qualifier -> BinderVar { pos: q.pos, name: q.name }
   ExprConstructor q -> BinderConstructor q []
   ExprBoolean b -> BinderBoolean b
   ExprChar c -> BinderChar c
@@ -565,8 +601,8 @@ toBinder = case _ of
   -- `x@p` reaches here as an application of the `@` operator, which is what
   -- the lexer makes of it outside a pattern.
   ExprOp lhs op rhs
-    | Array.null op.qualifier && op.name == "@" -> case lhs of
-        ExprIdent q | Array.null q.qualifier ->
+    | isNothing op.qualifier && op.name == "@" -> case lhs of
+        ExprIdent q | isNothing q.qualifier ->
           BinderNamed { pos: q.pos, name: q.name } (toBinder rhs)
         _ -> BinderError "only a name can be given to a pattern with `@`"
     | otherwise -> BinderOp (toBinder lhs) op (toBinder rhs)
@@ -590,7 +626,7 @@ letBinding :: Binder -> Guarded -> LetBinding
 letBinding b g = case b of
   BinderVar n -> LetName n [] g
   BinderConstructor q args
-    | Array.null q.qualifier
+    | isNothing q.qualifier
     , isLowerName q.name -> LetName { pos: q.pos, name: q.name } args g
   _ -> LetPattern b g
 
@@ -624,14 +660,14 @@ typeToVarBinding = case _ of
   TypeVar n -> TypeVarName n
   TypeRow (Row [ RowLabel l k ] Nothing) -> TypeVarKinded l k
   TypeParens t -> typeToVarBinding t
-  _ -> TypeVarName { pos: nowhere, name: "?" }
+  _ -> TypeVarName { pos: { line: 0, column: 0 }, name: "?" }
 
 declClass :: ClassHead -> Array Labeled -> Decl
 declClass = DeclClass
 
 moduleOf :: Qual -> Maybe (Array Export) -> Array DeclChain -> Module
 moduleOf n exports chains =
-  Module (qualName n) exports (Array.mapMaybe importOf chains)
+  Module (plain n) exports (Array.mapMaybe importOf chains)
     (Array.concat (map declsOf chains))
   where
   importOf = case _ of

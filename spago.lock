@@ -72,10 +72,13 @@
         "core": {
           "dependencies": [
             "arrays",
+            "either",
+            "language-cst-parser",
             "maybe",
             "prelude",
             "puppy-runtime",
-            "strings"
+            "strings",
+            "transformers"
           ]
         },
         "test": {
@@ -85,12 +88,14 @@
             "effect",
             "foldable-traversable",
             "integers",
+            "node-buffer",
+            "node-fs",
+            "node-process",
             "now",
             "numbers",
             "refs",
             "spec",
-            "spec-node",
-            "tuples"
+            "spec-node"
           ]
         }
       },
@@ -1584,6 +1589,39 @@
         "functions",
         "maybe",
         "prelude"
+      ]
+    },
+    "language-cst-parser": {
+      "type": "registry",
+      "version": "0.14.1",
+      "integrity": "sha256-tnue0oM2/EmyNJmLoJDnmUDfinKLJHi2fcSGt7d6ewU=",
+      "dependencies": [
+        "arrays",
+        "const",
+        "control",
+        "either",
+        "enums",
+        "foldable-traversable",
+        "free",
+        "functions",
+        "functors",
+        "identity",
+        "integers",
+        "lazy",
+        "lists",
+        "maybe",
+        "newtype",
+        "numbers",
+        "ordered-collections",
+        "partial",
+        "prelude",
+        "st",
+        "strings",
+        "transformers",
+        "tuples",
+        "typelevel-prelude",
+        "unfoldable",
+        "unsafe-coerce"
       ]
     },
     "lazy": {
