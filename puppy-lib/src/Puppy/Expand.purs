@@ -109,7 +109,12 @@ tokensOf syn = Syntax.declaredTokens syn.tokens
 -- | reported by `validate`, which runs before any of it is used.
 buildEnv :: Syntax.Grammar -> Env
 buildEnv syn =
-  { terminals: Set.fromFoldable (map _.name (tokensOf syn))
+  -- `ERROR` is a terminal every grammar has, whether or not it uses one. It is
+  -- not declared and carries no pattern; what makes it a terminal here is that
+  -- a rule may refer to it, and everything that resolves a reference has to
+  -- know that.
+  { terminals: Set.insert Syntax.errorToken.name
+      (Set.fromFoldable (map _.name (tokensOf syn)))
   , rules: Map.fromFoldable (map (\r -> Tuple r.name r) syn.rules)
   }
 
@@ -139,6 +144,56 @@ arityMessage name expected given =
   "`" <> name <> "` takes " <> plural expected "parameter"
     <> " but was given "
     <> plural given "argument"
+
+-- | The two names that belong to Puppy, everywhere a grammar could put one.
+-- |
+-- | The parser refuses these where it reads them, and a grammar read from
+-- | source cannot carry one. `Syntax.Grammar` is a public type, though, and one
+-- | built by hand can -- and then `EOF` would be declared twice, and `ERROR`
+-- | numbered twice: once as a declared terminal and once as the one recovery
+-- | names.
+-- |
+-- | The single exception is a reference to `ERROR` on the right of a
+-- | production, which is what it is for. Those are resolved elsewhere and
+-- | nothing here looks at them.
+reservedErrors :: Syntax.Grammar -> Array ExpandError
+reservedErrors syn = Array.concat
+  [ reserved "declared" (map reservedName (Syntax.declaredTokens syn.tokens))
+  , reserved "declared as a start symbol"
+      (map (\s -> { name: s.symbol, span: s.span }) syn.starts)
+  , reserved "given a type"
+      (map (\t -> { name: t.symbol, span: t.span }) syn.types)
+  , reserved "given a precedence"
+      ( Array.concatMap
+          (\d -> map (\t -> { name: t, span: d.span }) d.tokens)
+          syn.precedences
+      )
+  , reserved "used as a rule name" (map reservedName syn.rules)
+  , reserved "used as a rule parameter"
+      ( Array.concatMap
+          (\r -> map (\p -> { name: p, span: r.span }) r.parameters)
+          syn.rules
+      )
+  , reserved "used with `%prec`" (Array.concatMap precOf syn.rules)
+  ]
+  where
+  reservedName :: forall r. { name :: String, span :: Span | r } -> Named
+  reservedName r = { name: r.name, span: r.span }
+
+  precOf r = Array.mapMaybe
+    ( \p -> case p.directive of
+        Syntax.Prec t -> Just { name: t, span: p.span }
+        _ -> Nothing
+    )
+    r.productions
+
+  reserved role = Array.mapMaybe \n ->
+    if n.name == Syntax.eofToken.name || n.name == Syntax.errorToken.name then
+      Just
+        { message: "`" <> n.name <> "` is reserved and cannot be " <> role
+        , span: n.span
+        }
+    else Nothing
 
 -- | Everything wrong with a grammar that can be seen without instantiating it.
 -- | An empty result means the grammar is well-formed as written.
@@ -171,6 +226,7 @@ validate syn = Array.concat
       (\n -> "`" <> n <> "` is derived more than once")
       (map (\d -> { name: d.name, span: d.span }) syn.derives)
   , inlineCycleErrors syn
+  , reservedErrors syn
   , Array.concatMap (validateRule env) syn.rules
   ]
   where

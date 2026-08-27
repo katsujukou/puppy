@@ -274,8 +274,7 @@ scoped input indent path prod annotation boxed action@(Core.Action a) e =
       case b.value of
         Core.FromStack index ->
           spaced
-            # annotate at b.name
-                (Array.index prod.rhs index >>= typeOfSymbol input)
+            # annotateStack at b.name index
             # Emit.write
                 ( line at
                     ( b.name <> " = Puppy.Runtime.unbox (Puppy.Runtime.slot " <> show index <> " "
@@ -296,6 +295,16 @@ scoped input indent path prod annotation boxed action@(Core.Action a) e =
                         <> ")"
                     )
                 )
+
+  -- `ERROR` has a type and no author wrote it down. It is whatever a failing
+  -- parse would have reported, which is the token type the entry points use
+  -- and not the `Maybe` the driver works in.
+  annotateStack at name index = case Array.index prod.rhs index of
+    Just sym | isErrorSymbol input sym -> \acc ->
+      Emit.write (spaces at <> name <> " :: Puppy.Runtime.ParseError ") acc
+        # tokenRef input
+        # Emit.write "\n"
+    found -> annotate at name (found >>= typeOfSymbol input)
 
   annotate at name = case _ of
     Nothing -> identity
@@ -444,7 +453,12 @@ allTokens input = Array.snoc (tokenDecls input)
 terminalFunctions :: Input -> Emitter -> Emitter
 terminalFunctions input e =
   terminalFunction "terminalIndex" "puppyIndexOf" "Int" "_" Nothing indexOf
-    (show (Array.length tokens))
+    -- A token this grammar never declared has to land outside the table, and
+    -- `actionWidth` is the one number guaranteed to. Counting the declared
+    -- terminals would give the number `ERROR` has, in a grammar that has one,
+    -- and an undeclared token would be read as an error the parser had been
+    -- told how to recover from.
+    "actionWidth"
     indexNote
     e
     # terminalFunction "terminalValue" "puppyValueOf" "Puppy.Runtime.Value"
@@ -739,6 +753,25 @@ gotoTable input = Emit.write
     <> show target
     <> " }"
 
+-- | Whether a symbol is this grammar's `ERROR` terminal.
+isErrorSymbol :: Input -> Sym -> Boolean
+isErrorSymbol input = case _ of
+  T t -> Just t == input.grammar.errorTerminal
+  N _ -> false
+
+-- | What the table says about carrying on past an error.
+-- |
+-- | The value the grammar sees is the one a caller would: `toParseError` is
+-- | what turns the driver's `Maybe`-shaped token back into the token type the
+-- | entry points report, so a rule that binds an `ERROR` is handed the same
+-- | error a failing parse would have returned.
+recoveryField :: Input -> String
+recoveryField input = case input.grammar.errorTerminal of
+  Nothing -> "Puppy.Deps.Nothing"
+  Just terminal ->
+    "Puppy.Deps.Just { terminal: " <> show terminal
+      <> ", value: Puppy.Runtime.box <<< toParseError }"
+
 tableBuilder :: Input -> Emitter -> Emitter
 tableBuilder input e =
   Emit.write "\ntableFor :: Int -> Puppy.Runtime.Table (Puppy.Deps.Maybe " e
@@ -753,7 +786,8 @@ tableBuilder input e =
             <> line 2 ", terminalValue"
             <> line 2 ", terminalName"
             <> line 2
-              (", terminalCount: " <> show (Array.length (allTokens input)))
+              (", endTerminal: " <> show (Array.length (allTokens input) - 1))
+            <> line 2 (", recovery: " <> recoveryField input)
             <> line 2 ", startState: puppyStart"
             <> line 2 "}"
         )

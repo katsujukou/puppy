@@ -318,6 +318,41 @@ spec = describe "Puppy.Syntax.Parser" do
 
   -- Every position where a grammar can name a symbol, since reserving the name
   -- in only some of them reserves nothing.
+  describe "the reserved recovery name" do
+    -- `ERROR` may be written on the right of a production and nowhere else.
+    it "accepts a reference on the right of a production" do
+      case parse "%token A B\n%start { X } m\n%%\nm: | e = ERROR B { 1 }\n" of
+        Left err -> fail ("failed to parse: " <> err.message)
+        Right _ -> pure unit
+
+    it "rejects it as a token declaration" do
+      shouldRejectWith "cannot be declared"
+        "%token A ERROR\n%start { X } m\n%%\nm: | A { 1 }\n"
+
+    it "rejects it given a precedence" do
+      shouldRejectWith "cannot be given a precedence"
+        "%token A\n%left ERROR\n%start { X } m\n%%\nm: | A { 1 }\n"
+
+    it "rejects it after `%prec`" do
+      shouldRejectWith "cannot be used with `%prec`"
+        "%token A\n%start { X } m\n%%\nm: | A %prec ERROR { 1 }\n"
+
+    it "rejects it as a start symbol" do
+      shouldRejectWith "cannot be declared as a start symbol"
+        "%token A\n%start { X } ERROR\n%%\nm: | A { 1 }\n"
+
+    it "rejects it given a type" do
+      shouldRejectWith "cannot be given a type"
+        "%token A\n%start { X } m\n%type { X } ERROR\n%%\nm: | A { 1 }\n"
+
+    it "rejects it as a rule name" do
+      shouldRejectWith "cannot be used as a rule name"
+        "%token A\n%start { X } m\n%%\nm: | A { 1 }\nERROR: | A { 2 }\n"
+
+    it "rejects it as a rule parameter" do
+      shouldRejectWith "cannot be used as a rule parameter"
+        "%token A\n%start { X } m\n%%\nm: | A { 1 }\nq(ERROR): | ERROR { 2 }\n"
+
   describe "the reserved end-of-input name" do
     it "cannot be declared as a token" do
       shouldRejectWith "reserved" "%token EOF\n%%\nmain: | X { 1 }\n"

@@ -267,7 +267,8 @@ tableFor puppyStart =
   , terminalIndex
   , terminalValue
   , terminalName
-  , terminalCount: 4
+  , endTerminal: 3
+  , recovery: Puppy.Deps.Nothing
   , startState: puppyStart
   }
 

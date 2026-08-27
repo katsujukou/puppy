@@ -180,18 +180,24 @@ whole g production = case Array.index g.productions production of
         if Array.null p.rhs then "<empty>"
         else joinWith " " (map (symbolName g) p.rhs)
 
--- | A path written as the tokens a parser would actually have read: every
--- | nonterminal on the way replaced by the shortest input that matches it.
-spellOut :: LRGrammar -> Context -> Array Sym -> String
-spellOut g ctx path =
-  if Array.null tokens then "nothing"
-  else joinWith " " (map (terminalName g) tokens)
+-- | The terminals a path is made of: every nonterminal on the way replaced by
+-- | the shortest input that matches it.
+-- |
+-- | Kept apart from writing them out because a caller may need to look at what
+-- | is in the list before it is a sentence -- an `ERROR` can be hidden inside
+-- | a nonterminal's shortest derivation, and only the expanded list shows it.
+terminalsOf :: Context -> Array Sym -> Array Int
+terminalsOf ctx = Array.concatMap expand
   where
-  tokens = Array.concatMap expand path
-
   expand = case _ of
     T t -> [ t ]
     N n -> fromMaybe [] (Map.lookup n ctx.derivations)
+
+-- | Terminals, written out as a person would read them.
+spell :: LRGrammar -> Array Int -> String
+spell g tokens =
+  if Array.null tokens then "nothing"
+  else joinWith " " (map (terminalName g) tokens)
 
 -- | The item in this state that is waiting to shift the given terminal.
 shiftingItem :: LRGrammar -> Automaton -> Int -> Int -> Maybe Item
@@ -252,12 +258,34 @@ explainWith g automaton ctx conflict = case conflict.kind of
       <> "`.\n\n"
 
   situation terminal =
-    "  after reading   "
-      <> fromMaybe "<no path to this state>"
-        (map (spellOut g ctx) (pathTo ctx conflict.state))
+    "  after reading   " <> fromMaybe "<no path to this state>" spelt
       <> "\n  and seeing      "
       <> terminalName g terminal
       <> "\n"
+    where
+    -- `ERROR` is not a token anybody typed. A path that reaches this state
+    -- through one is not an input; it is an input, and then a place a parse
+    -- was picked up again. Spelling the whole of it out as though it had been
+    -- read would describe something nobody can write.
+    --
+    -- The path is expanded to terminals before it is looked at, because an
+    -- `ERROR` can be inside the shortest derivation of a nonterminal on the
+    -- way and not be a step of the path at all -- and split at every one of
+    -- them, because a parse can be picked up more than once.
+    spelt = map (say <<< terminalsOf ctx) (pathTo ctx conflict.state)
+
+    say tokens = joinWith recovered (map (spell g) (segments tokens))
+
+    recovered = "\n  then recovering from a syntax error and reading   "
+
+    segments tokens = case g.errorTerminal of
+      Nothing -> [ tokens ]
+      Just wasError -> split tokens
+        where
+        split rest = case Array.span (_ /= wasError) rest of
+          { init, rest: after } -> case Array.uncons after of
+            Nothing -> [ init ]
+            Just found -> Array.cons init (split found.tail)
 
   verdict v = "      " <> withPrec v.production <> "\n          " <> case v.prefers of
     PrefersShift -> "its precedence prefers the shift"
@@ -302,8 +330,11 @@ explainWith g automaton ctx conflict = case conflict.kind of
     -- totality and says the same thing.
     Disputed _ ->
       "Precedences that agree -- or the same `%prec` on each -- would settle it."
-    ShiftReduce _ ->
-      "`%shift` on the production says to prefer the shift, which is what will\n  happen anyway -- writing it makes that the grammar's decision rather than a\n  rule of thumb. Declaring `%left`, `%right` or `%nonassoc` for the token, or\n  `%prec` on the production, would settle it by precedence instead."
+    ShiftReduce c
+      | Just c.terminal == g.errorTerminal ->
+          "`%shift` on the production says to prefer the shift, which is what\n  will happen anyway -- writing it makes that the grammar's decision rather\n  than a rule of thumb. `ERROR` is not a token a grammar can give a precedence\n  to, so that is the only way to settle this one deliberately."
+      | otherwise ->
+          "`%shift` on the production says to prefer the shift, which is what will\n  happen anyway -- writing it makes that the grammar's decision rather than a\n  rule of thumb. Declaring `%left`, `%right` or `%nonassoc` for the token, or\n  `%prec` on the production, would settle it by precedence instead."
     ReduceReduce _ ->
       "Precedence cannot settle a reduce/reduce conflict. Two rules matching the\n  same input usually means the grammar says something other than what was\n  meant."
     AcceptReduce _ ->

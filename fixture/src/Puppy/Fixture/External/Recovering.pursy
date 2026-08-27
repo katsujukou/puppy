@@ -1,0 +1,34 @@
+-- A grammar that says where a parse may carry on past an error.
+--
+-- Nothing here recovers yet -- the runner that puts an `ERROR` on the stack is
+-- still to come. What this fixture holds is the half that is settled: `ERROR`
+-- is a terminal the grammar may name, it is numbered past the end of input,
+-- the table says so, and none of that changes what an ordinary parse does.
+--
+-- The token type is one Puppy did not write, which is where the numbering has
+-- a trap in it: classifying a token the grammar never declared has to land
+-- outside the table, and the number one past the declared terminals is the one
+-- `ERROR` has.
+
+%{
+import Puppy.Fixture.External.Token as T
+%}
+
+%tokentype { T.Token }
+
+%token PLUS "+" { T.At _ T.Plus }
+%token { Int } NUMBER "a number" { T.At _ (T.Number $$) }
+
+%start { String } total
+
+%type { String } total expr
+
+%%
+
+total:
+  | e = expr { e }
+
+expr:
+  | n = NUMBER                 { show n }
+  | a = expr PLUS b = expr %shift { a <> "+" <> b }
+  | e = ERROR                  { "?" <> show e.position }

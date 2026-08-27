@@ -350,6 +350,25 @@ one(t): | t %shift { 1 }
     -- The parser refuses both of these, so a grammar read from source cannot
     -- carry them. `Syntax.Grammar` is a public type, though, and one built or
     -- rewritten by hand can -- and then nothing downstream would notice.
+    -- The parser refuses these where it reads them. A `Syntax.Grammar` built by
+    -- hand does not go through the parser, and `ERROR` put anywhere but the
+    -- right of a production would be numbered twice.
+    it "catches a hand-built grammar that declares ERROR as a token" do
+      shouldFailBuilt "reserved and cannot be declared"
+        (declaringToken Syntax.errorToken.name marked)
+
+    it "catches a hand-built grammar that declares EOF as a token" do
+      shouldFailBuilt "reserved and cannot be declared"
+        (declaringToken Syntax.eofToken.name marked)
+
+    it "catches a hand-built ERROR given a precedence" do
+      shouldFailBuilt "reserved and cannot be given a precedence"
+        (givingPrecedence Syntax.errorToken.name marked)
+
+    it "catches a hand-built rule named ERROR" do
+      shouldFailBuilt "reserved and cannot be used as a rule name"
+        (renamingFirstRule Syntax.errorToken.name marked)
+
     it "catches a hand-built `@` that also declares a payload type" do
       shouldFailBuilt "has nothing left to say" (givePayload marked)
 
@@ -666,3 +685,42 @@ main: | x = loop { x }
     it "accepts a start symbol named after a generated local" do
       productionsOf "%token A\n%start { X } input\n%%\ninput: | A { 1 }\n"
         `shouldEqual` Right [ "input -> A" ]
+
+-- | The same grammar with a token declaration added, for showing what a
+-- | `Syntax.Grammar` built by hand can carry that a parsed one cannot.
+declaringToken :: String -> Syntax.Grammar -> Syntax.Grammar
+declaringToken name syn = syn
+  { tokens = case syn.tokens of
+      Syntax.ExternalTokens external -> Syntax.ExternalTokens
+        external
+          { tokens = Array.cons
+              { decl:
+                  { name
+                  , constructor: name
+                  , display: name
+                  , payload: Nothing
+                  , span: nowhereSpan
+                  }
+              , pattern: { code: { text: "P", span: nowhereSpan }, holes: [] }
+              , value: Syntax.FromPattern
+              }
+              external.tokens
+          }
+      other -> other
+  }
+
+givingPrecedence :: String -> Syntax.Grammar -> Syntax.Grammar
+givingPrecedence name syn = syn
+  { precedences = Array.cons
+      { associativity: Syntax.AssocLeft, tokens: [ name ], span: nowhereSpan }
+      syn.precedences
+  }
+
+renamingFirstRule :: String -> Syntax.Grammar -> Syntax.Grammar
+renamingFirstRule name syn = syn
+  { rules = Array.modifyAtIndices [ 0 ] (_ { name = name }) syn.rules }
+
+nowhereSpan :: Syntax.Span
+nowhereSpan = { start: nowhere, end: nowhere }
+  where
+  nowhere = { offset: 0, line: 1, column: 1 }

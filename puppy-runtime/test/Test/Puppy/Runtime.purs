@@ -67,7 +67,8 @@ exprTable =
   , terminalIndex
   , terminalValue
   , terminalName
-  , terminalCount: 5
+  , endTerminal: 4
+  , recovery: Nothing
   , startState: 0
   }
   where
@@ -163,7 +164,8 @@ rightRecTable =
   , terminalIndex
   , terminalValue
   , terminalName
-  , terminalCount: 2
+  , endTerminal: 1
+  , recovery: Nothing
   , startState: 0
   }
   where
@@ -605,7 +607,8 @@ wideTable =
   , terminalIndex
   , terminalValue
   , terminalName
-  , terminalCount: 6
+  , endTerminal: 5
+  , recovery: Nothing
   , startState: 0
   }
   where
@@ -666,7 +669,8 @@ hugeTable n =
   , terminalIndex
   , terminalValue
   , terminalName
-  , terminalCount: 6
+  , endTerminal: 5
+  , recovery: Nothing
   , startState: 0
   }
   where

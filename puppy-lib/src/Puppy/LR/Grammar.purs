@@ -31,7 +31,7 @@ import Data.Tuple (Tuple(..))
 import Puppy.Grammar (Symbol(..))
 import Puppy.Grammar as Core
 import Data.Map (Map)
-import Puppy.Syntax (Associativity, ConflictDirective(..), Span, eofToken)
+import Puppy.Syntax (Associativity, ConflictDirective(..), Span, eofToken, errorToken)
 import Puppy.Syntax as Syntax
 
 data Sym
@@ -74,6 +74,12 @@ type LRGrammar =
   , precedence :: Map Int Precedence
   -- ^ Only the terminals a `%left`, `%right` or `%nonassoc` named.
   , eof :: Int
+  -- ^ The end-of-input terminal, which is the last one a token can be.
+  , errorTerminal :: Maybe Int
+  -- ^ `ERROR`, if any production mentions it, numbered one past `eof`.
+  --
+  -- Added last and only when it is used, so that a grammar without recovery
+  -- has the terminal numbers and the table width it always had.
   }
 
 -- | Where a terminal sits in the pecking order, and which way it leans when it
@@ -116,6 +122,7 @@ number core = do
       , nonterminals
       , productions: all
       , precedence
+      , errorTerminal
       , starts: Array.mapWithIndex
           (\i a -> a.start { production = Array.length productions + i })
           augmented
@@ -125,12 +132,27 @@ number core = do
     [] -> Right g
     errors -> Left errors
   where
-  terminals =
+  -- The order matters, and the end of input has to be numbered before `ERROR`
+  -- is thought about: appending one and then taking the last index would make
+  -- `eof` the number of whichever was appended last.
+  declaredTerminals =
     map (\t -> { name: t.name, display: t.display })
       (Syntax.declaredTokens core.tokens)
-      <> [ { name: eofToken.name, display: eofToken.display } ]
 
-  eof = Array.length terminals - 1
+  eof = Array.length declaredTerminals
+
+  usesError = Array.any mentionsError core.productions
+
+  mentionsError p = Array.any (_ == Terminal errorToken.name) p.rhs
+
+  errorTerminal = if usesError then Just (eof + 1) else Nothing
+
+  terminals =
+    declaredTerminals
+      <> [ { name: eofToken.name, display: eofToken.display } ]
+      <>
+        if usesError then [ { name: errorToken.name, display: errorToken.display } ]
+        else []
 
   -- The order the declarations were written in is the whole of their meaning,
   -- so the index is the level.

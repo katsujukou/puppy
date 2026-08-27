@@ -34,6 +34,7 @@ module Puppy.Syntax
   , Rule
   , Grammar
   , eofToken
+  , errorToken
   , symbolRefName
   ) where
 
@@ -296,4 +297,21 @@ eofToken =
   { name: "EOF"
   , constructor: "EOF"
   , display: "end of input"
+  }
+
+-- | The terminal a grammar writes where a parse may carry on past an error.
+-- |
+-- | Reserved like `EOF`, and unlike `EOF` it is meant to be written: a rule
+-- | says `| e = ERROR VSEP { ... }` to mark a place a parse can be picked up
+-- | again. Everything else -- declaring it, giving it a precedence, naming a
+-- | rule after it -- is refused, because there is nothing there for a grammar
+-- | to say.
+-- |
+-- | No lexer produces one. It reaches the parser only from the recovery that
+-- | puts it there, which is why it is numbered past the end of input and why
+-- | nothing lists it among the tokens that were expected.
+errorToken :: { name :: String, display :: String }
+errorToken =
+  { name: "ERROR"
+  , display: "a syntax error"
   }

@@ -43,6 +43,7 @@ import Puppy.Syntax
   , TypeDecl
   , DeriveDecl
   , eofToken
+  , errorToken
   )
 import Puppy.Syntax.Lexer (LexToken(..), Located)
 import Puppy.Syntax.Lexer as Lexer
@@ -214,11 +215,27 @@ optionalPattern = do
       advance $> Just { code: braced.code, holes: braced.placeholders }
     _ -> pure Nothing
 
--- | The end-of-input terminal belongs to Puppy, not to the grammar. Every
--- | position where a grammar can name a symbol has to say so, or the promise
--- | that `EOF` is reserved is only half kept.
+-- | Neither reserved terminal belongs to the grammar. Every position where a
+-- | grammar can name a symbol has to say so, or the promise that they are
+-- | reserved is only half kept.
+-- |
+-- | `ERROR` is the one exception, and only in one place: a rule may refer to
+-- | it on the right of a production, which is the whole point of it.
+-- | `symbolRef` is where that is allowed, and it uses `checkNotEof` instead.
 checkNotReserved :: String -> Span -> String -> Parser Unit
-checkNotReserved name span role =
+checkNotReserved name span role = do
+  checkNotEof name span role
+  when (name == errorToken.name) do
+    fatal
+      ( "`" <> errorToken.name
+          <> "` is reserved for recovering from a syntax error and cannot be "
+          <> role
+          <> "; write it on the right of a production and nowhere else"
+      )
+      span
+
+checkNotEof :: String -> Span -> String -> Parser Unit
+checkNotEof name span role =
   when (name == eofToken.name) do
     fatal
       ( "`" <> eofToken.name
@@ -586,7 +603,7 @@ element = do
 symbolRef :: Parser SymbolRef
 symbolRef = do
   head <- identifier "a symbol name"
-  checkNotReserved head.name head.span "referred to in a rule"
+  checkNotEof head.name head.span "referred to in a rule"
   t <- current
   case t.token of
     TLParen -> do

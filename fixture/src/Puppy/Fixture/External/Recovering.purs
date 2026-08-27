@@ -5,10 +5,9 @@
 -- tokens by asking for another and being told there are none. Either way no
 -- caller can write one in the middle of the input and have the rest of it
 -- silently ignored.
-module Puppy.Fixture.Calculator
-  ( Token(..)
-  , expression
-  , expressionFrom
+module Puppy.Fixture.External.Recovering
+  ( total
+  , totalFrom
   ) where
 
 import Prelude
@@ -16,48 +15,42 @@ import Prelude
 import Puppy.Runtime as Puppy.Runtime
 import Puppy.Runtime.Deps as Puppy.Deps
 
-data Token
-  = PLUS
-  | TIMES
-  | LPAREN
-  | RPAREN
-  | INT (Int)
+import Puppy.Fixture.External.Token as T
 
-derive instance Eq Token
+-- | Which terminal a token is.
+-- |
+-- | The `Boolean` is always `true`. It is there so that the last arm below
+-- | cannot be proved unreachable, whatever the patterns above it cover
+-- | between them -- while leaving those patterns checked against one
+-- | another, so that a pattern written where a narrower one should have come
+-- | first is still reported.
+puppyIndexOf :: Boolean -> Puppy.Deps.Maybe (T.Token) -> Int
+puppyIndexOf = case _, _ of
+  true, Puppy.Deps.Just (T.At _ T.Plus) -> 0
+  true, Puppy.Deps.Just (T.At _ (T.Number _)) -> 1
+  true, Puppy.Deps.Nothing -> 2
+  _, _ -> actionWidth
 
-instance Show Token where
-  show = case _ of
-    PLUS -> "PLUS"
-    TIMES -> "TIMES"
-    LPAREN -> "LPAREN"
-    RPAREN -> "RPAREN"
-    INT puppyPayload -> "(INT " <> show puppyPayload <> ")"
+terminalIndex :: Puppy.Deps.Maybe (T.Token) -> Int
+terminalIndex = puppyIndexOf true
 
-terminalIndex :: Puppy.Deps.Maybe Token -> Int
-terminalIndex = case _ of
-  Puppy.Deps.Just PLUS -> 0
-  Puppy.Deps.Just TIMES -> 1
-  Puppy.Deps.Just LPAREN -> 2
-  Puppy.Deps.Just RPAREN -> 3
-  Puppy.Deps.Just (INT _) -> 4
-  Puppy.Deps.Nothing -> 5
+-- | The value a token carries, boxed for the parser stack. The `Boolean` is
+-- | there for the reason given above.
+puppyValueOf :: Boolean -> Puppy.Deps.Maybe (T.Token) -> Puppy.Runtime.Value
+puppyValueOf = case _, _ of
+  true, Puppy.Deps.Just (T.At _ T.Plus) -> Puppy.Runtime.box unit
+  true, Puppy.Deps.Just (T.At _ (T.Number puppyPayload)) -> Puppy.Runtime.box puppyPayload
+  true, Puppy.Deps.Nothing -> Puppy.Runtime.box unit
+  _, _ -> Puppy.Runtime.internalError
+    "a value was asked for a token this grammar does not declare"
 
-terminalValue :: Puppy.Deps.Maybe Token -> Puppy.Runtime.Value
-terminalValue = case _ of
-  Puppy.Deps.Just PLUS -> Puppy.Runtime.box unit
-  Puppy.Deps.Just TIMES -> Puppy.Runtime.box unit
-  Puppy.Deps.Just LPAREN -> Puppy.Runtime.box unit
-  Puppy.Deps.Just RPAREN -> Puppy.Runtime.box unit
-  Puppy.Deps.Just (INT puppyPayload) -> Puppy.Runtime.box puppyPayload
-  Puppy.Deps.Nothing -> Puppy.Runtime.box unit
+terminalValue :: Puppy.Deps.Maybe (T.Token) -> Puppy.Runtime.Value
+terminalValue = puppyValueOf true
 
 terminalNames :: Array String
 terminalNames =
-  [ "PLUS"
-  , "TIMES"
-  , "LPAREN"
-  , "RPAREN"
-  , "INT"
+  [ "+"
+  , "a number"
   , "end of input"
   ]
 
@@ -69,12 +62,11 @@ terminalName puppyIndex = case Puppy.Deps.index terminalNames puppyIndex of
 
 productionTable :: Array Puppy.Runtime.ProductionInfo
 productionTable =
-  [ { lhs: 0, arity: 1, name: "expression -> expr" }
-  , { lhs: 1, arity: 1, name: "expr -> INT" }
+  [ { lhs: 0, arity: 1, name: "total -> expr" }
+  , { lhs: 1, arity: 1, name: "expr -> NUMBER" }
   , { lhs: 1, arity: 3, name: "expr -> expr PLUS expr" }
-  , { lhs: 1, arity: 3, name: "expr -> expr TIMES expr" }
-  , { lhs: 1, arity: 3, name: "expr -> LPAREN expr RPAREN" }
-  , { lhs: 2, arity: 1, name: "<start expression> -> expression" }
+  , { lhs: 1, arity: 1, name: "expr -> ERROR" }
+  , { lhs: 2, arity: 1, name: "<start total> -> total" }
   ]
 
 productionAt :: Int -> Puppy.Runtime.ProductionInfo
@@ -87,45 +79,35 @@ semanticActionTable :: Array (Array Puppy.Runtime.Value -> Puppy.Runtime.Value)
 semanticActionTable =
   [ \puppyValues ->
       let
-        e :: Int
+        e :: String
         e = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ((e) :: Int)
+          ((e) :: String)
   , \puppyValues ->
       let
-        i :: Int
-        i = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        n :: Int
+        n = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ((i) :: Int)
+          ((show n) :: String)
   , \puppyValues ->
       let
-        a :: Int
+        a :: String
         a = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
 
-        b :: Int
+        b :: String
         b = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          ((a + b) :: Int)
+          ((a <> "+" <> b) :: String)
   , \puppyValues ->
       let
-        a :: Int
-        a = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
-
-        b :: Int
-        b = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
+        e :: Puppy.Runtime.ParseError (T.Token)
+        e = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ((a * b) :: Int)
-  , \puppyValues ->
-      let
-        e :: Int
-        e = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
-      in
-        Puppy.Runtime.box
-          ((e) :: Int)
+          (("?" <> show e.position) :: String)
   , \_ -> Puppy.Runtime.internalError
       "the start production has no semantic action"
   ]
@@ -139,33 +121,22 @@ semanticActionAt puppyIndex = case Puppy.Deps.index semanticActionTable puppyInd
 actionTable :: Array Int
 actionTable =
   [ 0
-  , 0
   , 3
   , 0
   , 4
-  , 0
-  , 0
-  , 0
-  , 3
-  , 0
-  , 4
-  , 0
-  , -2
   , -2
   , 0
   , -2
   , 0
-  , -2
+  , -4
   , 0
-  , 0
+  , -4
   , 0
   , 0
   , 0
   , 1
+  , 0
   , 7
-  , 8
-  , 0
-  , 0
   , 0
   , -1
   , 0
@@ -173,41 +144,14 @@ actionTable =
   , 3
   , 0
   , 4
-  , 0
-  , 0
-  , 0
-  , 3
-  , 0
-  , 4
-  , 0
-  , -4
-  , -4
-  , 0
-  , -4
-  , 0
-  , -4
-  , -3
-  , 8
-  , 0
-  , -3
-  , 0
-  , -3
   , 7
-  , 8
   , 0
-  , 12
+  , -3
   , 0
-  , 0
-  , -5
-  , -5
-  , 0
-  , -5
-  , 0
-  , -5
   ]
 
 actionWidth :: Int
-actionWidth = 6
+actionWidth = 4
 
 actionAt :: Int -> Int -> Puppy.Runtime.Action
 actionAt puppyState puppyTerminal =
@@ -222,15 +166,11 @@ actionAt puppyState puppyTerminal =
 gotoRows :: Array (Array { on :: Int, to :: Int })
 gotoRows =
   [ [ { on: 0, to: 3 }, { on: 1, to: 4 } ]
-  , [ { on: 1, to: 9 } ]
   , []
   , []
   , []
-  , [ { on: 1, to: 8 } ]
-  , [ { on: 1, to: 7 } ]
   , []
-  , []
-  , []
+  , [ { on: 1, to: 6 } ]
   , []
   ]
 
@@ -243,7 +183,7 @@ gotoAt puppyState puppyNonterminal = case Puppy.Deps.index gotoRows puppyState o
     Puppy.Deps.Nothing -> Puppy.Runtime.internalError
       ("no goto from state " <> show puppyState <> " on " <> show puppyNonterminal)
 
-tableFor :: Int -> Puppy.Runtime.Table (Puppy.Deps.Maybe Token) Puppy.Runtime.Value
+tableFor :: Int -> Puppy.Runtime.Table (Puppy.Deps.Maybe (T.Token)) Puppy.Runtime.Value
 tableFor puppyStart =
   { action: actionAt
   , goto: gotoAt
@@ -252,8 +192,8 @@ tableFor puppyStart =
   , terminalIndex
   , terminalValue
   , terminalName
-  , endTerminal: 5
-  , recovery: Puppy.Deps.Nothing
+  , endTerminal: 2
+  , recovery: Puppy.Deps.Just { terminal: 3, value: Puppy.Runtime.box <<< toParseError }
   , startState: puppyStart
   }
 
@@ -261,29 +201,29 @@ tableFor puppyStart =
 -- | caller, so an error that landed on it reports no token rather than one the
 -- | caller has no way to name.
 toParseError
-  :: Puppy.Runtime.ParseError (Puppy.Deps.Maybe Token)
-  -> Puppy.Runtime.ParseError Token
+  :: Puppy.Runtime.ParseError (Puppy.Deps.Maybe (T.Token))
+  -> Puppy.Runtime.ParseError (T.Token)
 toParseError puppyError =
   puppyError { found = Puppy.Deps.fromMaybe Puppy.Deps.Nothing puppyError.found }
 
 fromResult
   :: forall puppyResult
-   . Puppy.Deps.Either (Puppy.Runtime.ParseError (Puppy.Deps.Maybe Token)) Puppy.Runtime.Value
-  -> Puppy.Deps.Either (Puppy.Runtime.ParseError Token) puppyResult
+   . Puppy.Deps.Either (Puppy.Runtime.ParseError (Puppy.Deps.Maybe (T.Token))) Puppy.Runtime.Value
+  -> Puppy.Deps.Either (Puppy.Runtime.ParseError (T.Token)) puppyResult
 fromResult = case _ of
   Puppy.Deps.Left puppyError -> Puppy.Deps.Left (toParseError puppyError)
   Puppy.Deps.Right puppyValue -> Puppy.Deps.Right (Puppy.Runtime.unbox puppyValue)
 
 -- | Feed the parser from an array, without building a second one.
 -- |
--- | The driver's token here is `Puppy.Deps.Maybe Token`, and that is exactly
--- | what a lookup past the end of an array answers, so the same
+-- | The driver reads a `Puppy.Deps.Maybe` of the token type, and that is
+-- | exactly what a lookup past the end of an array answers, so the same
 -- | `Puppy.Deps.index` both reads a token and says there are no more.
 runArray
-  :: Array Token
+  :: Array (T.Token)
   -> Int
-  -> Puppy.Runtime.Step (Puppy.Deps.Maybe Token) Puppy.Runtime.Value
-  -> Puppy.Deps.Either (Puppy.Runtime.ParseError (Puppy.Deps.Maybe Token)) Puppy.Runtime.Value
+  -> Puppy.Runtime.Step (Puppy.Deps.Maybe (T.Token)) Puppy.Runtime.Value
+  -> Puppy.Deps.Either (Puppy.Runtime.ParseError (Puppy.Deps.Maybe (T.Token))) Puppy.Runtime.Value
 runArray puppyInput puppyIndex puppyStep = case puppyStep of
   Puppy.Runtime.Await puppyResume ->
     runArray puppyInput (puppyIndex + 1)
@@ -291,14 +231,14 @@ runArray puppyInput puppyIndex puppyStep = case puppyStep of
   Puppy.Runtime.Done puppyValue -> Puppy.Deps.Right puppyValue
   Puppy.Runtime.Failed puppyError -> Puppy.Deps.Left puppyError
 
-expression :: Array Token -> Puppy.Deps.Either (Puppy.Runtime.ParseError Token) (Int)
-expression puppyInput =
+total :: Array (T.Token) -> Puppy.Deps.Either (Puppy.Runtime.ParseError (T.Token)) (String)
+total puppyInput =
   fromResult (runArray puppyInput 0 (Puppy.Runtime.start (tableFor 0)))
 
-expressionFrom
+totalFrom
   :: forall m
    . Puppy.Deps.MonadRec m
-  => m (Puppy.Deps.Maybe Token)
-  -> m (Puppy.Deps.Either (Puppy.Runtime.ParseError Token) (Int))
-expressionFrom puppyNext =
+  => m (Puppy.Deps.Maybe (T.Token))
+  -> m (Puppy.Deps.Either (Puppy.Runtime.ParseError (T.Token)) (String))
+totalFrom puppyNext =
   map fromResult (Puppy.Runtime.parseM (tableFor 0) puppyNext)

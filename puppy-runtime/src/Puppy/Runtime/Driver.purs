@@ -27,6 +27,7 @@ module Puppy.Runtime.Driver
   , shift
   , reduce
   , ProductionInfo
+  , Recovery
   , Table
   , ParseError
   , Step(..)
@@ -85,6 +86,18 @@ shift state = state + 2
 reduce :: Int -> Action
 reduce production = negate production - 1
 
+-- | What a parse needs in order to carry on past an error.
+-- |
+-- | One thing rather than two, because a terminal number with no way to make a
+-- | value for it, or a value with no terminal to attach it to, is not half of
+-- | anything. `terminal` is one past `endTerminal`: recovery is the only thing
+-- | that names it, `terminalIndex` never returns it, and nothing lists it
+-- | among the tokens that were expected.
+type Recovery tok val =
+  { terminal :: Int
+  , value :: ParseError tok -> val
+  }
+
 -- | What the driver needs to know about a production in order to reduce by it.
 type ProductionInfo =
   { lhs :: Int
@@ -103,7 +116,13 @@ type Table tok val =
   , terminalIndex :: tok -> Int
   , terminalValue :: tok -> val
   , terminalName :: Int -> String
-  , terminalCount :: Int
+  , endTerminal :: Int
+  -- ^ The number of the end-of-input terminal, and so the last one a token can
+  -- be. The user's terminals are `0 .. endTerminal - 1`.
+  , recovery :: Maybe (Recovery tok val)
+  -- ^ Where a grammar said a parse may carry on past an error, if it said so
+  -- anywhere. `Nothing` is a grammar with no recovery rules in it, and the
+  -- only thing a parse can do with an error is stop.
   , startState :: Int
   }
 
@@ -357,7 +376,7 @@ expectedAt :: forall tok val. Table tok val -> Int -> Array String
 expectedAt table state =
   map table.terminalName
     $ Array.filter (\t -> table.action state t /= errorAction)
-    $ Array.range 0 (table.terminalCount - 1)
+    $ Array.range 0 table.endTerminal
 
 -- | Run the LR automaton over an array of tokens.
 -- |

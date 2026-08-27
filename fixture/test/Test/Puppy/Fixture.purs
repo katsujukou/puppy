@@ -22,6 +22,7 @@ import Effect (Effect)
 import Puppy.Fixture.Calculator (Token(..))
 import Puppy.Fixture.External.Calculator as External
 import Puppy.Fixture.External.Tally as Tally
+import Puppy.Fixture.External.Recovering as Recovering
 import Puppy.Fixture.External.Whole as Whole
 import Puppy.Fixture.External.Token as T
 import Puppy.Fixture.External.Word as W
@@ -327,5 +328,30 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         (Whole.sumFrom oneAtATime)
         [ T.At 1 (T.Number 2), T.At 3 T.Plus, T.At 5 (T.Number 4) ]
         `shouldEqual` Right "2+@34"
+
+  describe "a generated parser whose grammar names `ERROR`" do
+    -- Naming `ERROR` adds a terminal past the end of input and a column to the
+    -- table. It changes nothing about a parse that does not need it: nothing
+    -- ever produces one, so every rule mentioning it is unreachable until
+    -- there is something that puts one on the stack.
+    it "parses what it always did" do
+      Recovering.total [ T.At 0 (T.Number 1), T.At 2 T.Plus, T.At 4 (T.Number 2) ]
+        `shouldEqual` Right "1+2"
+
+    -- The trap the numbering has in it. A token the grammar never declared is
+    -- classified as one past the declared terminals, and that is the number
+    -- `ERROR` has -- so a fallback that counted them would read an unreadable
+    -- token as an error the parser had been told how to recover from.
+    it "does not read an undeclared token as an `ERROR`" do
+      map (map _.position <<< leftOf <<< Recovering.total)
+        [ [ T.At 0 T.Space ]
+        , [ T.At 0 (T.Number 1), T.At 2 T.Space ]
+        , [ T.At 0 (T.Number 1), T.At 2 T.Plus, T.At 4 T.Space ]
+        ]
+        `shouldEqual` [ Just 0, Just 1, Just 2 ]
+
+    it "keeps `ERROR` out of the tokens it says were expected" do
+      map (map _.expected <<< leftOf <<< Recovering.total) [ [ T.At 0 T.Plus ] ]
+        `shouldEqual` [ Just [ "a number" ] ]
 
   Offside.spec

@@ -227,6 +227,36 @@ one: | A %shift { 1 }
 two: | A { 2 }
 """
 
+-- | A grammar where `ERROR` is not on the path at all: it is inside the
+-- | shortest input that matches the nonterminals the path goes through.
+hiddenError :: String
+hiddenError =
+  """
+%token A B
+%start { X } p
+%%
+p:
+  | x = q B { x }
+  | x = r B { x }
+q: | x = s { x }
+r: | x = s { x }
+s: | ERROR { 1 }
+"""
+
+-- | A grammar whose conflicting states are reached through two recoveries.
+twiceRecovered :: String
+twiceRecovered =
+  """
+%token A B
+%start { X } p
+%%
+p:
+  | x = q { x }
+  | x = r { x }
+q: | ERROR A ERROR B { 1 }
+r: | ERROR A ERROR B { 2 }
+"""
+
 spec :: Spec Unit
 spec = describe "Puppy.LR.Table" do
   it "accepts once the start symbol has been read and nothing is left" do
@@ -403,6 +433,27 @@ spec = describe "Puppy.LR.Table" do
 
 explainSpec :: Spec Unit
 explainSpec = describe "Puppy.LR.Explain" do
+  -- `ERROR` is not a token anybody typed, so a path that reaches a state
+  -- through one is not an input and is not written out as one.
+  describe "a path that goes through a recovery" do
+    it "finds an ERROR inside the shortest derivation of a nonterminal" do
+      -- Nothing on the path is `ERROR`. It is inside the shortest input that
+      -- matches `q` and `r`, which is what the path is spelled out through.
+      withTable Pager hiddenError \built ->
+        case Array.head (report built.g built.automaton built.table) of
+          Nothing -> fail "expected a conflict to explain"
+          Just text -> do
+            mentions text "then recovering from a syntax error"
+            notMentions text "a syntax error B"
+
+    it "splits at every ERROR, not only the first" do
+      withTable Pager twiceRecovered \built ->
+        case Array.head (report built.g built.automaton built.table) of
+          Nothing -> fail "expected a conflict to explain"
+          Just text -> do
+            mentions text "then recovering from a syntax error and reading   A"
+            mentions text "then recovering from a syntax error and reading   B"
+
   it "says where the parser is, in tokens rather than state numbers" do
     withTable Pager (plusGrammar "") \built ->
       case Array.head (report built.g built.automaton built.table) of
@@ -479,3 +530,14 @@ explainSpec = describe "Puppy.LR.Explain" do
   mentions text needle =
     when (not (contains (Pattern needle) text)) do
       fail ("expected the report to mention " <> show needle <> ", got:\n" <> text)
+
+-- | Reading a conflict report, which is text and is meant to be.
+mentions :: String -> String -> Aff Unit
+mentions text needle =
+  when (not (contains (Pattern needle) text)) do
+    fail ("expected the report to mention " <> show needle <> ", got:\n" <> text)
+
+notMentions :: String -> String -> Aff Unit
+notMentions text needle =
+  when (contains (Pattern needle) text) do
+    fail ("expected the report not to mention " <> show needle <> ", got:\n" <> text)

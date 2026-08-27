@@ -29,7 +29,7 @@ puppyIndexOf = case _, _ of
   true, Puppy.Deps.Just (T.At _ T.Plus) -> 0
   true, Puppy.Deps.Just (T.At _ (T.Number _)) -> 1
   true, Puppy.Deps.Nothing -> 2
-  _, _ -> 3
+  _, _ -> actionWidth
 
 terminalIndex :: Puppy.Deps.Maybe (T.Token) -> Int
 terminalIndex = puppyIndexOf true
@@ -176,7 +176,8 @@ tableFor puppyStart =
   , terminalIndex
   , terminalValue
   , terminalName
-  , terminalCount: 3
+  , endTerminal: 2
+  , recovery: Puppy.Deps.Nothing
   , startState: puppyStart
   }
 

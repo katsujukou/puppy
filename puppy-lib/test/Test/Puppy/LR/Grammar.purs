@@ -70,6 +70,22 @@ expr:
   | a = expr TIMES b = expr %prec TIMES  { Mul a b }
 """
 
+-- | The same tokens as `arithmetic`, with one rule that names `ERROR`, so
+-- | that the two can be compared terminal for terminal.
+recovering :: String
+recovering =
+  """
+%token PLUS TIMES INT
+%start { E } main
+%%
+main: | e = expr { e }
+expr:
+  | i = INT                              { Lit i }
+  | a = expr PLUS b = expr               { Add a b }
+  | a = expr TIMES b = expr %prec TIMES  { Mul a b }
+  | e = ERROR                            { Broken e }
+"""
+
 spec :: Spec Unit
 spec = do
   describe "Puppy.LR.Grammar" do
@@ -97,6 +113,28 @@ spec = do
       withGrammar arithmetic \g ->
         g.starts `shouldEqual`
           [ { name: "main", symbol: 0, production: 4 } ]
+
+    it "numbers the end of input after the declared tokens" do
+      withGrammar arithmetic \g -> do
+        map _.name g.terminals `shouldEqual` [ "PLUS", "TIMES", "INT", "EOF" ]
+        g.eof `shouldEqual` 3
+        g.errorTerminal `shouldEqual` Nothing
+
+    -- `ERROR` goes on the end, after the end of input, and only where a rule
+    -- named it. Putting it there first would make `eof` the number of whatever
+    -- was appended last.
+    it "numbers ERROR past the end of input, where a rule names one" do
+      withGrammar recovering \g -> do
+        map _.name g.terminals
+          `shouldEqual` [ "PLUS", "TIMES", "INT", "EOF", "ERROR" ]
+        g.eof `shouldEqual` 3
+        g.errorTerminal `shouldEqual` Just 4
+
+    it "leaves the numbers alone in a grammar that names no ERROR" do
+      withGrammar arithmetic \plain ->
+        withGrammar recovering \recovered ->
+          Array.take 4 (map _.name recovered.terminals)
+            `shouldEqual` map _.name plain.terminals
 
     it "resolves %prec to a terminal number" do
       withGrammar arithmetic \g ->
