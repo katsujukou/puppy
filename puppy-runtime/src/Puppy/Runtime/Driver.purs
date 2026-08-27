@@ -207,36 +207,75 @@ resume (Resume machine) tok = go machine.states machine.values
               )
           else if code < 0 then
             let
-              info = table.production (negate code - 1)
+              production = negate code - 1
+
+              info = table.production production
+            in
               -- The stack keeps the rightmost symbol at the head, so the
-              -- arguments have to be flipped back into production order.
+              -- arguments have to be turned back into production order.
               --
               -- The two short cases are worth writing out. Most of the
               -- productions of a real grammar take one symbol or none -- the
               -- chains of `a -> b` that give an expression grammar its
-              -- precedence levels are all arity one -- and the general case
-              -- builds two arrays to hand over what is already at the head of
-              -- the stack.
-              args = case info.arity, values of
-                0, _ -> []
-                1, Cons v _ -> [ v ]
-                _, _ ->
-                  Array.reverse
-                    (Array.fromFoldable (List.take info.arity values))
-              values' = List.drop info.arity values
-              states' = List.drop info.arity states
-            in
-              case states' of
-                Nil -> Failed (errorAt machine state (Just tok))
-                Cons under _ ->
-                  go
-                    (Cons (table.goto under info.lhs) states')
-                    (Cons (table.semanticAction (negate code - 1) args) values')
+              -- precedence levels are all arity one -- and for those the
+              -- argument is already at the head of the stack.
+              case fastest info.arity states values of
+                Nothing -> Failed (errorAt machine state (Just tok))
+                Just taken -> case taken.states of
+                  Nil -> Failed (errorAt machine state (Just tok))
+                  Cons under _ ->
+                    -- `go` calls itself here and nowhere else. Reaching it
+                    -- through a helper would make the two mutually recursive,
+                    -- which is not a tail call the compiler turns into a loop,
+                    -- and a grammar that reduces its way through a long input
+                    -- would run out of stack for it.
+                    go
+                      (Cons (table.goto under info.lhs) taken.states)
+                      (Cons (table.semanticAction production taken.args) taken.values)
           else if code == 1 then
             case values of
               Nil -> Failed (errorAt machine state (Just tok))
               Cons v _ -> Done v
           else Failed (errorAt machine state (Just tok))
+
+-- | Take one production's worth off both stacks, in one walk down each.
+-- |
+-- | The arguments come off backwards -- the stack keeps the rightmost symbol
+-- | at the head -- so consing each one onto a list as it comes off puts them
+-- | back in the order the production was written, and that list becomes the
+-- | array in one go. Doing it this way walks each stack once rather than three
+-- | times, and builds one array rather than two.
+-- |
+-- | `Nothing` when a stack ran out, which is a broken table rather than
+-- | anything an input can do.
+-- | Calls `popped`, after answering the two short arities without walking
+-- | anything: nothing is taken off for a production of none, and a production
+-- | of one is handed what is already at the head of the stack.
+fastest
+  :: forall val
+   . Int
+  -> List Int
+  -> List val
+  -> Maybe { states :: List Int, values :: List val, args :: Array val }
+fastest arity states values = case arity, states, values of
+  0, _, _ -> Just { states, values, args: [] }
+  1, Cons _ states', Cons value values' ->
+    Just { states: states', values: values', args: [ value ] }
+  _, _, _ -> popped arity states values Nil
+
+popped
+  :: forall val
+   . Int
+  -> List Int
+  -> List val
+  -> List val
+  -> Maybe { states :: List Int, values :: List val, args :: Array val }
+popped left states values args
+  | left <= 0 = Just { states, values, args: Array.fromFoldable args }
+  | otherwise = case states, values of
+      Cons _ states', Cons value values' ->
+        popped (left - 1) states' values' (Cons value args)
+      _, _ -> Nothing
 
 -- | The error a parser is owed when its supply of tokens runs out.
 -- |

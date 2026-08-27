@@ -20,5 +20,6 @@ package:
       - datetime
       - now
       - partial
+      - strings
       - transformers
       - tuples

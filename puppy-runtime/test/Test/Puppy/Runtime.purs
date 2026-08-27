@@ -11,6 +11,7 @@ import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.DateTime.Instant (unInstant)
 import Data.Either (Either(..))
+import Data.String.Common (joinWith)
 import Data.List (List(..))
 import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Time.Duration (Milliseconds(..))
@@ -408,6 +409,21 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         let input = Array.snoc (Array.replicate 100 RA) REof
         (pulled (mute rightRecTable) REof input).result `shouldEqual` Right 100
 
+    describe "reducing by a wide production" do
+      -- Five symbols, spelled back out. A reversed answer, or one that walked
+      -- the value stack from the wrong end, reads as "edcba".
+      it "hands the semantic action its arguments in production order" do
+        parse wideTable [ WA, WB, WC, WD, WE, WEof ]
+          `shouldEqual` Right "abcde"
+
+      -- The pop walks both stacks with an accumulator, which the compiler
+      -- turns into a loop -- and has to, because nothing bounds how many
+      -- symbols a production may have.
+      it "reduces by a production of thousands of symbols" do
+        parse (hugeTable deepArity)
+          (Array.snoc (Array.replicate deepArity WA) WEof)
+          `shouldEqual` Right deepArity
+
     describe "transducing sources" do
       it "hands over what a step produced, in order" do
         (drain expand 0 [ One 1, Skip, Burst 2, One 3 ]).tokens
@@ -493,3 +509,124 @@ drain step transducer input =
   go collected = transduce step counted <#> case _ of
     Nothing -> Rec.Done collected
     Just token -> Rec.Loop (Cons token collected)
+
+--------------------------------------------------------------------------------
+-- Reducing by a production of more than two symbols
+--
+-- The stack keeps the rightmost symbol at the head, so a reduction has to turn
+-- what it takes off back into the order the production was written. Two
+-- symbols cannot tell a correct answer from a reversed one, and the tables
+-- above reduce by `E -> E + T` into a sum, which cannot tell either. This one
+-- can: it spells out what it was handed, in the order it was handed it.
+--
+--   wide -> A B C D E
+--------------------------------------------------------------------------------
+
+data WTok = WA | WB | WC | WD | WE | WEof
+
+derive instance Eq WTok
+
+instance Show WTok where
+  show = case _ of
+    WA -> "WA"
+    WB -> "WB"
+    WC -> "WC"
+    WD -> "WD"
+    WE -> "WE"
+    WEof -> "WEof"
+
+wideTable :: Table WTok String
+wideTable =
+  { action
+  , goto
+  , production
+  , semanticAction
+  , terminalIndex
+  , terminalValue
+  , terminalName
+  , terminalCount: 6
+  , startState: 0
+  }
+  where
+  -- Shift the five symbols in turn, then reduce, then accept.
+  action = case _, _ of
+    0, 0 -> shift 1
+    1, 1 -> shift 2
+    2, 2 -> shift 3
+    3, 3 -> shift 4
+    4, 4 -> shift 5
+    5, 5 -> reduce 0
+    6, 5 -> acceptAction
+    _, _ -> errorAction
+
+  goto = case _, _ of
+    0, 0 -> 6
+    _, _ -> 0
+
+  production _ = { lhs: 0, arity: 5, name: "wide -> A B C D E" }
+
+  semanticAction _ values = joinWith "" values
+
+  terminalIndex = case _ of
+    WA -> 0
+    WB -> 1
+    WC -> 2
+    WD -> 3
+    WE -> 4
+    WEof -> 5
+
+  terminalValue = case _ of
+    WA -> "a"
+    WB -> "b"
+    WC -> "c"
+    WD -> "d"
+    WE -> "e"
+    WEof -> ""
+
+  terminalName = case _ of
+    0 -> "A"
+    1 -> "B"
+    2 -> "C"
+    3 -> "D"
+    4 -> "E"
+    _ -> "end of input"
+
+deepArity :: Int
+deepArity = 50000
+
+-- | One production that takes `n` symbols, for showing that taking them off
+-- | the stack is a loop and not a stack of its own.
+hugeTable :: Int -> Table WTok Int
+hugeTable n =
+  { action
+  , goto
+  , production
+  , semanticAction
+  , terminalIndex
+  , terminalValue
+  , terminalName
+  , terminalCount: 6
+  , startState: 0
+  }
+  where
+  -- State 0 shifts every `A` and stays put; the end marker reduces, and the
+  -- state the goto lands in accepts.
+  action = case _, _ of
+    0, 0 -> shift 0
+    0, 5 -> reduce 0
+    1, 5 -> acceptAction
+    _, _ -> errorAction
+
+  goto _ _ = 1
+
+  production _ = { lhs: 0, arity: n, name: "huge" }
+
+  semanticAction _ values = Array.length values
+
+  terminalIndex = case _ of
+    WA -> 0
+    _ -> 5
+
+  terminalValue _ = 0
+
+  terminalName _ = "A"
