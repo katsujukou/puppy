@@ -19,8 +19,11 @@ import Data.Tuple (Tuple(..))
 import Effect (Effect)
 import Effect.Class (liftEffect)
 import Effect.Now (now)
+import Effect.Ref (Ref)
+import Effect.Ref as Ref
+import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafeCrashWith)
-import Puppy.Runtime (ParseError, Table, acceptAction, errorAction, parse, parseM, reduce, shift)
+import Puppy.Runtime (ParseError, Resume, Step(..), Table, acceptAction, canConsume, errorAction, parse, parseM, reduce, resume, shift, start)
 import Puppy.Runtime.Source (initial, transduce)
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
@@ -409,6 +412,64 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         let input = Array.snoc (Array.replicate 100 RA) REof
         (pulled (mute rightRecTable) REof input).result `shouldEqual` Right 100
 
+    describe "asking whether a token could be taken" do
+      it "says so when the token can be shifted where the parser stands" do
+        (canConsume <$> after exprTable [] <@> TNum 1) `shouldEqual` Just true
+
+      it "follows the reductions that have to happen first" do
+        -- After `( 1` the parser is holding `T -> n .`; taking a `)` means
+        -- reducing to `T`, then to `E`, before anything can shift it.
+        (canConsume <$> after exprTable [ TLParen, TNum 1 ] <@> TRParen)
+          `shouldEqual` Just true
+
+      it "says no when the reductions run out before a shift" do
+        (canConsume <$> after exprTable [ TLParen, TNum 1 ] <@> TNum 2)
+          `shouldEqual` Just false
+
+      -- The case an approximation gets wrong. After `1` a `)` is not an error
+      -- in the state the parser is standing in -- `)` is in the follow of both
+      -- `T` and `E`, so it reduces, twice -- and only the state underneath
+      -- both of those rejects it. Asking the top state alone would say yes.
+      it "says no to a token the state underneath the reductions rejects" do
+        (canConsume <$> after exprTable [ TNum 1 ] <@> TRParen)
+          `shouldEqual` Just false
+
+      -- A token that ends the parse is one the parser can take. A caller
+      -- looking for somewhere to carry on from wants to be told that here.
+      it "counts accepting as taking the token" do
+        (canConsume <$> after exprTable [ TNum 1 ] <@> TEof) `shouldEqual` Just true
+
+      it "never asks what the token carries, or runs an action" do
+        calls <- liftEffect (Ref.new 0)
+        case after (counting calls exprTable) [ TLParen, TNum 1 ] of
+          Nothing -> fail "expected a parser waiting for a token"
+          Just waiting -> do
+            built <- liftEffect (Ref.read calls)
+            canConsume waiting TRParen `shouldEqual` true
+            canConsume waiting (TNum 2) `shouldEqual` false
+            canConsume waiting TEof `shouldEqual` false
+            asked <- liftEffect (Ref.read calls)
+            asked `shouldEqual` built
+
+      it "walks a long run of reductions without running out of stack" do
+        -- Right recursion again: the end marker is what finally reduces, and
+        -- there are as many reductions waiting as there were tokens.
+        let input = Array.replicate deepPullSize RA
+        (canConsume <$> after rightRecTable input <@> REof) `shouldEqual` Just true
+
+      -- Nothing is taken, so the same one answers again, and answers the same.
+      it "leaves the parser where it was" do
+        case after exprTable [ TNum 1 ] of
+          Nothing -> fail "expected a parser waiting for a token"
+          Just waiting -> do
+            canConsume waiting TEof `shouldEqual` true
+            canConsume waiting TPlus `shouldEqual` true
+            canConsume waiting TLParen `shouldEqual` false
+            canConsume waiting TEof `shouldEqual` true
+            case resume waiting TEof of
+              Done value -> value `shouldEqual` 1
+              _ -> fail "expected the parse to accept"
+
     describe "reducing by a wide production" do
       -- Five symbols, spelled back out. A reversed answer, or one that walked
       -- the value stack from the wrong end, reads as "edcba".
@@ -630,3 +691,33 @@ hugeTable n =
   terminalValue _ = 0
 
   terminalName _ = "A"
+
+--------------------------------------------------------------------------------
+-- Asking whether a token could be taken
+--------------------------------------------------------------------------------
+
+-- | The parser after it has been given these tokens, or `Nothing` if it
+-- | finished or failed on one of them.
+after :: forall tok val. Table tok val -> Array tok -> Maybe (Resume tok val)
+after table input = go 0 (start table)
+  where
+  go index step = case step of
+    Await waiting -> case Array.index input index of
+      Nothing -> Just waiting
+      Just tok -> go (index + 1) (resume waiting tok)
+    _ -> Nothing
+
+-- | The same table, counting the two things a question must not do.
+-- |
+-- | Crashing in them would be simpler to read and would not work: building the
+-- | parser to ask a question of means running it, and running it calls both.
+-- | What can be checked is that asking does not call them again.
+counting :: forall tok val. Ref Int -> Table tok val -> Table tok val
+counting calls table = table
+  { terminalValue = \tok -> unsafePerformEffect do
+      Ref.modify_ (_ + 1) calls
+      pure (table.terminalValue tok)
+  , semanticAction = \production args -> unsafePerformEffect do
+      Ref.modify_ (_ + 1) calls
+      pure (table.semanticAction production args)
+  }

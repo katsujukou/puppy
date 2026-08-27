@@ -33,6 +33,7 @@ module Puppy.Runtime.Driver
   , Resume
   , start
   , resume
+  , canConsume
   , unexpectedEnd
   , parse
   , parseM
@@ -276,6 +277,52 @@ popped left states values args
       Cons _ states', Cons value values' ->
         popped (left - 1) states' values' (Cons value args)
       _, _ -> Nothing
+
+-- | Whether the parser could take this token, without taking it.
+-- |
+-- | A question about the tables and the state stack, and about nothing else. A
+-- | reduction on the way to the answer is followed on the states alone: no
+-- | semantic value is unboxed, `terminalValue` is never asked what the token
+-- | carries and `semanticAction` is never run. Answering has no cost beyond
+-- | the reductions it walks and leaves nothing behind, so the same `Resume`
+-- | can be asked about as many tokens as a caller likes.
+-- |
+-- | `true` includes accepting. A token that ends the parse is one the parser
+-- | can take, which is what a caller looking for somewhere to carry on from
+-- | wants to hear -- the alternative is a caller that walks past the end of a
+-- | complete parse looking for a better place.
+-- |
+-- | `expected` is not a substitute for this. That is the cheap approximation
+-- | every LR parser reports: it asks the top state alone and so can name a
+-- | token that the reduction underneath would have rejected. This follows the
+-- | reductions, and so answers exactly.
+canConsume :: forall tok val. Resume tok val -> tok -> Boolean
+canConsume (Resume machine) tok = go machine.states
+  where
+  table = machine.table
+
+  terminal = table.terminalIndex tok
+
+  go states = case states of
+    Nil -> false
+    Cons state _ ->
+      let
+        code = table.action state terminal
+      in
+        -- Shift and accept are both the parser taking the token. Only a
+        -- reduction leaves the question open, and then it is the same question
+        -- one state further down.
+        if code >= acceptAction then true
+        else if code == errorAction then false
+        else
+          let
+            info = table.production (negate code - 1)
+
+            states' = List.drop info.arity states
+          in
+            case states' of
+              Nil -> false
+              Cons under _ -> go (Cons (table.goto under info.lhs) states')
 
 -- | The error a parser is owed when its supply of tokens runs out.
 -- |
