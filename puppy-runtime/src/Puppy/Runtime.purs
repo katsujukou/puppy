@@ -31,5 +31,5 @@ module Puppy.Runtime
   , module Puppy.Runtime.Value
   ) where
 
-import Puppy.Runtime.Driver (Action, ParseError, ProductionInfo, Recovery, Resume, Step(..), Table, acceptAction, canConsume, errorAction, parse, parseM, reduce, resume, shift, start, unexpectedEnd)
+import Puppy.Runtime.Driver (Action, ParseError, ProductionInfo, Recovery, RecoveryResult(..), Resume, Step(..), Table, acceptAction, canConsume, errorAction, parse, parseM, parseMRecovering, reduce, resume, shift, start, unexpectedEnd)
 import Puppy.Runtime.Value (Value, box, internalError, slot, unbox)

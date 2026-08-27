@@ -35,6 +35,8 @@ module Puppy.Runtime.Driver
   , start
   , resume
   , canConsume
+  , RecoveryResult(..)
+  , parseMRecovering
   , unexpectedEnd
   , parse
   , parseM
@@ -166,18 +168,41 @@ data Step tok val
   | Done val
   | Failed (ParseError tok)
 
+-- | A parser that has read nothing, as the machine rather than as a step.
+-- |
+-- | Only for the runners here, which need the thing itself rather than the
+-- | answer that it is waiting: taking it back out of a `Step` would mean a
+-- | case with an arm that cannot happen, and an arm that cannot happen is a
+-- | crash somebody has to be told to ignore.
+starting :: forall tok val. Table tok val -> Resume tok val
+starting table = Resume
+  { table
+  , states: List.singleton table.startState
+  , values: Nil
+  , position: 0
+  }
+
 -- | A parser that has read nothing yet, waiting for the first token.
 start :: forall tok val. Table tok val -> Step tok val
-start table = Await
-  ( Resume
-      { table
-      , states: List.singleton table.startState
-      , values: Nil
-      , position: 0
-      }
-  )
+start = Await <<< starting
 
--- | Give the parser the token it asked for.
+-- | What the LR loop did with a token.
+-- |
+-- | The one difference from `Step`, and the reason there are two of these, is
+-- | the last case. A parse that stops has no more use for its stacks and
+-- | `Step` does not carry them; a parse that means to carry on needs exactly
+-- | those stacks -- the ones left after every reduction the token called for,
+-- | which is where a place to pick up again has to be looked for.
+data Outcome tok val
+  = Advanced (Resume tok val)
+  | Accepted val
+  | Rejected
+      { error :: ParseError tok
+      , states :: List Int
+      , values :: List val
+      }
+
+-- | The LR loop. One of them, with two ways of reading what it answered.
 -- |
 -- | This runs until the parser needs another one, which means every reduction
 -- | the token calls for happens here: a lookahead can finish any number of
@@ -194,8 +219,8 @@ start table = Await
 -- | End of input is a token like any other as far as this is concerned. The
 -- | table decides what it means, which is how the driver stays ignorant of
 -- | which terminal a particular grammar ends with.
-resume :: forall tok val. Resume tok val -> tok -> Step tok val
-resume (Resume machine) tok = go machine.states machine.values
+offer :: forall tok val. Resume tok val -> tok -> Outcome tok val
+offer (Resume machine) tok = go machine.states machine.values
   where
   table = machine.table
 
@@ -209,15 +234,18 @@ resume (Resume machine) tok = go machine.states machine.values
   -- the author's the asking is a walk down every pattern they wrote.
   terminal = table.terminalIndex tok
 
+  stuck state states values =
+    Rejected { error: errorAt machine state (Just tok), states, values }
+
   go states values =
     case states of
-      Nil -> Failed (errorAt machine 0 (Just tok))
+      Nil -> stuck 0 states values
       Cons state _ ->
         let
           code = table.action state terminal
         in
           if code >= 2 then
-            Await
+            Advanced
               ( Resume
                   { table
                   , states: Cons (code - 2) states
@@ -240,9 +268,9 @@ resume (Resume machine) tok = go machine.states machine.values
               -- precedence levels are all arity one -- and for those the
               -- argument is already at the head of the stack.
               case fastest info.arity states values of
-                Nothing -> Failed (errorAt machine state (Just tok))
+                Nothing -> stuck state states values
                 Just taken -> case taken.states of
-                  Nil -> Failed (errorAt machine state (Just tok))
+                  Nil -> stuck state states values
                   Cons under _ ->
                     -- `go` calls itself here and nowhere else. Reaching it
                     -- through a helper would make the two mutually recursive,
@@ -254,9 +282,25 @@ resume (Resume machine) tok = go machine.states machine.values
                       (Cons (table.semanticAction production taken.args) taken.values)
           else if code == 1 then
             case values of
-              Nil -> Failed (errorAt machine state (Just tok))
-              Cons v _ -> Done v
-          else Failed (errorAt machine state (Just tok))
+              Nil -> stuck state states values
+              Cons v _ -> Accepted v
+          else stuck state states values
+
+-- | Give the parser the token it asked for.
+-- |
+-- | This runs until the parser needs another one, which means every reduction
+-- | the token calls for happens here: a lookahead can finish any number of
+-- | productions before it is finally shifted, and none of that asks the caller
+-- | for anything.
+-- |
+-- | End of input is a token like any other as far as this is concerned. The
+-- | table decides what it means, which is how the driver stays ignorant of
+-- | which terminal a particular grammar ends with.
+resume :: forall tok val. Resume tok val -> tok -> Step tok val
+resume waiting tok = case offer waiting tok of
+  Advanced next -> Await next
+  Accepted value -> Done value
+  Rejected stopped -> Failed stopped.error
 
 -- | Take one production's worth off both stacks, in one walk down each.
 -- |
@@ -422,3 +466,149 @@ parseM table next = tailRecM go (start table)
     Done value -> pure (Rec.Done (Right value))
     Failed err -> pure (Rec.Done (Left err))
     Await waiting -> map (Rec.Loop <<< resume waiting) next
+
+--------------------------------------------------------------------------------
+-- Carrying on past an error
+--------------------------------------------------------------------------------
+
+-- | What came of a parse that was allowed to carry on past an error.
+-- |
+-- | Three answers rather than two, because "it parsed" and "it parsed, and
+-- | here is what was wrong with it" are different things to be told and a
+-- | caller acts differently on each. The errors are in the order they were
+-- | found.
+data RecoveryResult tok val
+  = ParseSucceeded val
+  | ParseRecovered (Array (ParseError tok)) val
+  | ParseFailed (Array (ParseError tok))
+
+-- | Where the recovery runner is in its work: reading tokens the ordinary way,
+-- | or throwing away the ones it cannot use yet.
+-- |
+-- | Carried by the loop rather than by a recursive call, so that a run of
+-- | thrown-away tokens is a loop and not a stack.
+data Mode tok val
+  = Parsing (Resume tok val)
+  | Discarding (Resume tok val)
+
+-- | A parser standing where an `ERROR` has just been shifted, if the grammar
+-- | said there was anywhere to shift one.
+-- |
+-- | Where to shift it is found by walking down the stacks the failure left --
+-- | which are the ones after every reduction the token called for, not the
+-- | ones the parser was holding when the token arrived. A state accepts an
+-- | `ERROR` when its `ERROR` cell is a shift and not a reduce: reducing on it
+-- | would be treating a token nobody read as a lookahead, and the whole point
+-- | of it is that it is not one.
+-- |
+-- | `position` does not move. An `ERROR` is not a token read from the input,
+-- | and the next thing reported has to be able to say where it really was.
+recoverAt
+  :: forall tok val
+   . Table tok val
+  -> Int
+  -> ParseError tok
+  -> List Int
+  -> List val
+  -> Maybe (Resume tok val)
+recoverAt table position error states values = do
+  handler <- table.recovery
+  go handler states values
+  where
+  go handler left leftValues = case left of
+    Nil -> Nothing
+    Cons state under ->
+      let
+        code = table.action state handler.terminal
+      in
+        if code >= 2 then Just
+          ( Resume
+              { table
+              , states: Cons (code - 2) left
+              , values: Cons (handler.value error) leftValues
+              , position
+              }
+          )
+        else case under, leftValues of
+          Cons _ _, Cons _ deeper -> go handler under deeper
+          _, _ -> Nothing
+
+-- | Parse from tokens pulled one at a time, carrying on past what it can.
+-- |
+-- | The same LR loop as `parseM`, read one case further: where that one stops
+-- | at a failure, this one looks for somewhere the grammar said a parse may be
+-- | picked up again, puts an `ERROR` there, and then throws tokens away until
+-- | it finds one the parser can take.
+-- |
+-- | `canConsume` is what "can take" means, and it has to be that rather than
+-- | the cheaper question. A token the top state would reduce on and the state
+-- | underneath would reject is not one to carry on from; taking it would fail
+-- | again immediately and the parser would throw the next one away for the
+-- | same reason, all the way to the end.
+-- |
+-- | End of input is where this stops. A parser that cannot take it has nowhere
+-- | left to go, and asking the source for another token after it has said
+-- | there are none is asking a question that has already been answered.
+parseMRecovering
+  :: forall m tok val
+   . MonadRec m
+  => Table tok val
+  -> m tok
+  -> m (RecoveryResult tok val)
+parseMRecovering table next = do
+  first <- next
+  tailRecM step { mode: Parsing (starting table), tok: first, errors: Nil }
+  where
+  -- One step asks the source for at most one token and comes straight back to
+  -- `tailRecM`, which is what keeps a long run of thrown-away tokens a loop.
+  -- Throwing them away inside the bind, as one recursive call after another,
+  -- is not a tail call the compiler can see, and a file with a great many
+  -- unreadable tokens in a row is exactly the file this is for.
+  step state = case state.mode of
+    Parsing waiting -> case offer waiting state.tok of
+      Accepted value -> pure (Rec.Done (answered state.errors value))
+      Advanced onwards -> do
+        tok <- next
+        pure (Rec.Loop { mode: Parsing onwards, tok, errors: state.errors })
+      Rejected stopped ->
+        let
+          errors = Cons stopped.error state.errors
+        in
+          case
+            recoverAt table (positionOf waiting) stopped.error stopped.states
+              stopped.values
+            of
+            Nothing -> pure (Rec.Done (ParseFailed (collected errors)))
+            Just resumed -> pure
+              (Rec.Loop { mode: Discarding resumed, tok: state.tok, errors })
+
+    -- The token that failed is tried first: an `ERROR` on the stack may be
+    -- exactly what it was waiting for, and throwing it away unread would lose
+    -- a token that has just become perfectly good.
+    Discarding waiting
+      | canConsume waiting state.tok ->
+          pure (Rec.Loop { mode: Parsing waiting, tok: state.tok, errors: state.errors })
+      -- End of input is answered once. Asking again after being told there are
+      -- no more tokens is asking a question that has already been answered.
+      | table.terminalIndex state.tok == table.endTerminal ->
+          pure (Rec.Done (ParseFailed (collected state.errors)))
+      | otherwise -> do
+          tok <- next
+          pure
+            ( Rec.Loop
+                { mode: Discarding (moved waiting), tok, errors: state.errors }
+            )
+
+  -- A token that was read and thrown away still moves the count on, or the
+  -- next thing reported would say it was somewhere it was not.
+  moved (Resume machine) = Resume machine { position = machine.position + 1 }
+
+  positionOf (Resume machine) = machine.position
+
+  -- Errors are collected by consing, so that a file with a great many of them
+  -- does not copy the list it has so far for every one it finds.
+  collected errors = Array.reverse (Array.fromFoldable errors)
+
+  answered errors value = case collected errors of
+    [] -> ParseSucceeded value
+    found -> ParseRecovered found value

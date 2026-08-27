@@ -23,7 +23,7 @@ import Effect.Ref (Ref)
 import Effect.Ref as Ref
 import Effect.Unsafe (unsafePerformEffect)
 import Partial.Unsafe (unsafeCrashWith)
-import Puppy.Runtime (ParseError, Resume, Step(..), Table, acceptAction, canConsume, errorAction, parse, parseM, reduce, resume, shift, start)
+import Puppy.Runtime (ParseError, RecoveryResult(..), Resume, Step(..), Table, acceptAction, canConsume, errorAction, parse, parseM, parseMRecovering, reduce, resume, shift, start)
 import Puppy.Runtime.Source (initial, transduce)
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
@@ -414,6 +414,81 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         let input = Array.snoc (Array.replicate 100 RA) REof
         (pulled (mute rightRecTable) REof input).result `shouldEqual` Right 100
 
+    describe "carrying on past an error" do
+      it "says so plainly when nothing went wrong" do
+        case recovered [ IA, ISemi, IA ] of
+          ParseSucceeded value -> value `shouldEqual` "a,a"
+          _ -> fail "expected a parse with nothing wrong with it"
+
+      -- The bad token is thrown away, an `ERROR` stands in its place, and the
+      -- list carries on. One error, and a tree.
+      it "throws away what it cannot use and carries on" do
+        case recovered [ IA, ISemi, IBad, ISemi, IA ] of
+          ParseRecovered errors value -> do
+            value `shouldEqual` "a,!2,a"
+            map _.position errors `shouldEqual` [ 2 ]
+          _ -> fail "expected a recovered parse"
+
+      -- Each error is reported where it was, which is what counting the
+      -- tokens that were thrown away is for.
+      it "reports every error, in the order it found them" do
+        case recovered [ IBad, ISemi, IA, ISemi, IBad ] of
+          ParseRecovered errors value -> do
+            value `shouldEqual` "!0,a,!4"
+            map _.position errors `shouldEqual` [ 0, 4 ]
+          _ -> fail "expected a recovered parse"
+
+      it "keeps the token that failed, where the ERROR was what it wanted" do
+        -- `;` after the recovery is not thrown away: with an `item` on the
+        -- stack it is exactly what the parser was waiting for.
+        case recovered [ IBad, ISemi, IA ] of
+          ParseRecovered _ value -> value `shouldEqual` "!0,a"
+          _ -> fail "expected a recovered parse"
+
+      -- A grammar that never says where a parse may be picked up again has
+      -- nowhere to put an `ERROR`, and the first thing wrong with the input is
+      -- the last thing it has to say.
+      it "stops where the grammar declared no recovery" do
+        case unrecoverable [ IA, IBad, IA ] of
+          ParseFailed errors -> map _.position errors `shouldEqual` [ 1 ]
+          _ -> fail "expected a parse that could not carry on"
+
+      -- End of input is answered once. Asking again after being told there
+      -- are no more tokens is asking a question already answered, and a source
+      -- that counts its answers would say so.
+      it "does not ask for a token after the end of input" do
+        pulls [ IA, ISemi, IBad ] `shouldEqual` 4
+
+      -- The stack recovery starts from is the one the reductions left, not the
+      -- one the parser was holding when the token arrived. Here `;` finishes
+      -- an `item` and then an `items` before anything rejects it, and the
+      -- state that takes an `ERROR` is one frame further down again -- so
+      -- both stacks have to have been walked together to get there.
+      it "recovers from the stack the reductions left, popping to reach it" do
+        case recoveredWith reducingFirst [ IA, ISemi ] of
+          ParseRecovered errors value -> do
+            value `shouldEqual` "!1"
+            map _.position errors `shouldEqual` [ 1 ]
+          _ -> fail "expected a recovered parse"
+
+      -- Somewhere to put an `ERROR` is not the same as somewhere to finish.
+      it "stops when the ERROR went in and the end still cannot be reached" do
+        case recoveredWith stillStuck [ IBad ] of
+          ParseFailed errors -> map _.position errors `shouldEqual` [ 0 ]
+          _ -> fail "expected a parse that could not be finished"
+
+      it "does not ask for a token after that end of input either" do
+        pullsWith stillStuck [ IBad ] `shouldEqual` 2
+
+      -- A file can be unreadable for a long stretch. Throwing tokens away has
+      -- to be a loop, not one recursive call for every token thrown.
+      it "throws away a long run of tokens without running out of stack" do
+        case recoveredWith itemsTable (Array.replicate deepPullSize IBad) of
+          ParseRecovered errors value -> do
+            value `shouldEqual` "!0"
+            Array.length errors `shouldEqual` 1
+          _ -> fail "expected a recovered parse"
+
     describe "asking whether a token could be taken" do
       it "says so when the token can be shifted where the parser stands" do
         (canConsume <$> after exprTable [] <@> TNum 1) `shouldEqual` Just true
@@ -725,3 +800,147 @@ counting calls table = table
       Ref.modify_ (_ + 1) calls
       pure (table.semanticAction production args)
   }
+
+--------------------------------------------------------------------------------
+-- Carrying on past an error
+--
+--   items -> items SEMI item | item
+--   item  -> A | ERROR
+--
+-- Terminals: A=0, SEMI=1, EOF=2, ERROR=3. A bad token inside a list is thrown
+-- away and the list carries on, which is what a declaration list wants.
+--------------------------------------------------------------------------------
+
+data ITok = IA | ISemi | IBad | IEof
+
+derive instance Eq ITok
+
+instance Show ITok where
+  show = case _ of
+    IA -> "IA"
+    ISemi -> "ISemi"
+    IBad -> "IBad"
+    IEof -> "IEof"
+
+itemsTable :: Table ITok String
+itemsTable =
+  { action
+  , goto
+  , production
+  , semanticAction
+  , terminalIndex
+  , terminalValue
+  , terminalName
+  , endTerminal: 2
+  , recovery: Just { terminal: 3, value: \e -> "!" <> show e.position }
+  , startState: 0
+  }
+  where
+  -- 0  start:            A -> 3, ERROR -> 4, goto items -> 1, item -> 2
+  -- 1  after items:      SEMI -> 5, EOF -> accept
+  -- 2  items -> item .
+  -- 3  item -> A .
+  -- 4  item -> ERROR .
+  -- 5  after items SEMI: A -> 3, ERROR -> 4, goto item -> 6
+  -- 6  items -> items SEMI item .
+  action = case _, _ of
+    0, 0 -> shift 3
+    0, 3 -> shift 4
+    1, 1 -> shift 5
+    1, 2 -> acceptAction
+    2, 1 -> reduce 1
+    2, 2 -> reduce 1
+    3, 1 -> reduce 2
+    3, 2 -> reduce 2
+    4, 1 -> reduce 3
+    4, 2 -> reduce 3
+    5, 0 -> shift 3
+    5, 3 -> shift 4
+    6, 1 -> reduce 0
+    6, 2 -> reduce 0
+    _, _ -> errorAction
+
+  goto = case _, _ of
+    0, 0 -> 1
+    0, 1 -> 2
+    5, 1 -> 6
+    _, _ -> 0
+
+  production = case _ of
+    0 -> { lhs: 0, arity: 3, name: "items -> items SEMI item" }
+    1 -> { lhs: 0, arity: 1, name: "items -> item" }
+    2 -> { lhs: 1, arity: 1, name: "item -> A" }
+    _ -> { lhs: 1, arity: 1, name: "item -> ERROR" }
+
+  semanticAction = case _ of
+    0 -> \values -> at 0 values <> "," <> at 2 values
+    _ -> \values -> at 0 values
+
+  at i values = fromMaybe "?" (Array.index values i)
+
+  terminalIndex = case _ of
+    IA -> 0
+    ISemi -> 1
+    IEof -> 2
+    IBad -> 4
+
+  terminalValue = case _ of
+    IA -> "a"
+    ISemi -> ";"
+    _ -> ""
+
+  terminalName = case _ of
+    0 -> "A"
+    1 -> ";"
+    _ -> "end of input"
+
+-- | The tokens of an array, then end of input for ever after.
+feeding :: Array ITok -> State Int ITok
+feeding input = do
+  index <- State.get
+  State.put (index + 1)
+  pure (fromMaybe IEof (Array.index input index))
+
+recovered :: Array ITok -> RecoveryResult ITok String
+recovered input = State.evalState (parseMRecovering itemsTable (feeding input)) 0
+
+-- | The same grammar with nowhere to put an `ERROR`.
+unrecoverable :: Array ITok -> RecoveryResult ITok String
+unrecoverable input =
+  State.evalState (parseMRecovering itemsTable { recovery = Nothing } (feeding input)) 0
+
+-- | How many times the source was asked for a token.
+pulls :: Array ITok -> Int
+pulls input =
+  State.execState (parseMRecovering itemsTable (feeding input)) 0
+
+-- | The same grammar, except that a `;` after a complete `items` is an error.
+-- |
+-- | That makes `A ;` fail on a token the parser reduces twice before rejecting
+-- | -- `item -> A`, then `items -> item` -- so recovery starts from the stack
+-- | those reductions left, and has to walk down it to find a state that takes
+-- | an `ERROR`.
+reducingFirst :: Table ITok String
+reducingFirst = itemsTable
+  { action = \state terminal ->
+      if state == 1 && terminal == 1 then errorAction
+      else itemsTable.action state terminal
+  }
+
+-- | The same grammar, except that an `ERROR` on its own does not finish an
+-- | `item` at the end of input. Recovery finds somewhere to put one and it
+-- | still cannot get to the end.
+stillStuck :: Table ITok String
+stillStuck = itemsTable
+  { action = \state terminal ->
+      if state == 4 && terminal == 2 then errorAction
+      else itemsTable.action state terminal
+  }
+
+recoveredWith :: Table ITok String -> Array ITok -> RecoveryResult ITok String
+recoveredWith table input =
+  State.evalState (parseMRecovering table (feeding input)) 0
+
+pullsWith :: Table ITok String -> Array ITok -> Int
+pullsWith table input =
+  State.execState (parseMRecovering table (feeding input)) 0
