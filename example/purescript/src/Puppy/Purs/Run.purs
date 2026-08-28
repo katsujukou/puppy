@@ -13,6 +13,7 @@ module Puppy.Purs.Run
   ( LexFailure
   , Parsed
   , parseModule
+  , parseModuleRecovering
   , parseExpr
   , parseType
   , parseDecl
@@ -27,7 +28,7 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Puppy.Purs.CST as C
 import Puppy.Purs.Parser as P
-import Puppy.Runtime (ParseError)
+import Puppy.Runtime (ParseError, RecoveryResult)
 import PureScript.CST.Errors (ParseError) as CST
 import PureScript.CST.Lexer (lex, lexModule)
 import PureScript.CST.TokenStream (TokenStep(..), TokenStream)
@@ -70,6 +71,17 @@ runWith lexer entry source = State.evalStateT (entry next) (lexer source)
 -- | rule". A fragment cannot have one, so the others use `lex`.
 parseModule :: String -> Parsed C.Module
 parseModule = runWith lexModule P.parseModuleFrom
+
+-- | The same, carrying on past what it can.
+-- |
+-- | The lexer is still allowed to give up -- a character nobody can read is
+-- | not a syntax error and there is nothing for the grammar to recover from --
+-- | so the outer `Either` stays. What changes is the inner answer: a tree with
+-- | holes in it, and the errors that put them there.
+parseModuleRecovering
+  :: String -> Either LexFailure (RecoveryResult SourceToken C.Module)
+parseModuleRecovering =
+  runWith lexModule P.parseModuleRecoveringFrom
 
 parseExpr :: String -> Parsed C.Expr
 parseExpr = runWith lex P.parseExprFrom

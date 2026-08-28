@@ -28,6 +28,7 @@ import Data.Generic.Rep (class Generic)
 import Data.Show.Generic (genericShow)
 import Data.Maybe (Maybe(..), isNothing)
 import Data.String.CodeUnits as SCU
+import Puppy.Runtime (ParseError)
 import PureScript.CST.Types as T
 
 -- | A name and where it was written.
@@ -213,7 +214,8 @@ data RecordUpdateOrLabel
 data Where = Where Expr (Array LetBinding)
 
 data LetBinding
-  = LetSignature Name Type
+  = LetBroken (Maybe T.SourcePos)
+  | LetSignature Name Type
   | LetName Name (Array Binder) Guarded
   | LetPattern Binder Guarded
 
@@ -228,7 +230,8 @@ data PatternGuard
   | GuardBind Binder Expr
 
 data DoStatement
-  = DoLet (Array LetBinding)
+  = DoBroken (Maybe T.SourcePos)
+  | DoLet (Array LetBinding)
   | DoDiscard Expr
   | DoBind Binder Expr
 
@@ -352,6 +355,7 @@ data Import
 data DeclChain
   = ChainImport ImportDecl
   | ChainDecls (Array Decl)
+  | ChainBroken (Maybe T.SourcePos)
 
 data KindKeyword = KindData | KindNewtype | KindType | KindClass
 
@@ -662,6 +666,15 @@ typeToVarBinding = case _ of
   TypeParens t -> typeToVarBinding t
   _ -> TypeVarName { pos: { line: 0, column: 0 }, name: "?" }
 
+-- | Where a declaration was that could not be read.
+-- |
+-- | The error itself is not kept here -- a recovering parse hands back every
+-- | one of them alongside the tree, so keeping a copy in the tree would be
+-- | keeping it twice. What the tree needs is that there was a hole and where
+-- | it was, which is what the token the parse stopped on says.
+brokenAt :: ParseError T.SourceToken -> Maybe T.SourcePos
+brokenAt error = map (\t -> t.range.start) error.found
+
 declClass :: ClassHead -> Array Labeled -> Decl
 declClass = DeclClass
 
@@ -672,8 +685,9 @@ moduleOf n exports chains =
   where
   importOf = case _ of
     ChainImport i -> Just i
-    ChainDecls _ -> Nothing
+    _ -> Nothing
 
   declsOf = case _ of
     ChainImport _ -> []
     ChainDecls ds -> ds
+    ChainBroken _ -> []

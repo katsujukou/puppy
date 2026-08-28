@@ -491,6 +491,7 @@ recordUpdate:
 -- binding as far as an LR automaton is concerned; upstream settles that with
 -- happy's `%shift`, which Puppy has no equivalent of.
 letBinding:
+  | e = ERROR                   { C.LetBroken (C.brokenAt e) }
   | n = ident DCOLON t = type   { C.LetSignature n t }
   | b = binder1 g = guardedDecl { C.letBinding b g }
 
@@ -538,6 +539,7 @@ patternGuard:
 
 -- Do statements have the same shape of ambiguity, and the same answer.
 doStatement:
+  | e = ERROR                     { C.DoBroken (C.brokenAt e) }
   | LET bs = letBindings          { C.DoLet bs }
   | e = expr                      { C.DoDiscard e }
   | b = expr LARROW e = expr      { C.DoBind (C.toBinder b) e }
@@ -674,9 +676,13 @@ moduleDecls:
   | ds = manySepOrEmpty(moduleDecl, VSEP) { ds }
 
 -- An instance chain is a run of declarations joined by `else`.
+-- A declaration nobody could read ends where the next one begins, which the
+-- layout pass has already marked. That is the smallest thing worth giving up
+-- on in this language: everything else in the file is still read.
 moduleDecl:
   | i = importDecl            { C.ChainImport i }
   | ds = decls1               { C.ChainDecls ds }
+  | e = ERROR                 { C.ChainBroken (C.brokenAt e) }
 
 decls1:
   | d = decl                     { [ d ] }

@@ -12,7 +12,9 @@ import Data.Either (Either(..))
 import Data.Maybe (Maybe(..))
 import Effect (Effect)
 import Puppy.Purs.CST as C
+import Data.Array as Array
 import Puppy.Purs.Run as Run
+import Puppy.Runtime (RecoveryResult(..))
 import Test.Spec (describe, it)
 import Test.Spec.Assertions (fail, shouldEqual)
 import Test.Spec.Reporter (consoleReporter)
@@ -215,6 +217,50 @@ main = runSpecAndExitProcess [ consoleReporter ] do
             ]
         )
 
+  describe "carrying on past an error" do
+    -- A declaration nobody can read ends where the next one begins. Everything
+    -- around it is still read, which is what an editor wants and what the
+    -- entry points that stop at the first error cannot give.
+    it "reads the declarations either side of a broken one" do
+      case Run.parseModuleRecovering "module M where\ngood = 2\n= 1\nalso = 3\n" of
+        Left _ -> fail "expected the lexer to manage"
+        Right (ParseSucceeded _) -> fail "expected something to be wrong"
+        Right (ParseFailed _) -> fail "expected it to carry on"
+        Right (ParseRecovered errors (C.Module _ _ _ decls)) -> do
+          Array.length errors `shouldEqual` 1
+          map declName decls `shouldEqual` [ "good", "also" ]
+
+    -- Three places say a parse may be picked up again, and each of them is a
+    -- list the layout pass has already marked the boundaries of.
+    it "carries on inside a `do` block" do
+      case Run.parseModuleRecovering "module M where\nmain = do\n  = 1\n  pure 2\n" of
+        Right (ParseRecovered errors _) -> Array.length errors `shouldEqual` 1
+        _ -> fail "expected a recovered parse"
+
+    it "carries on inside a `let` block" do
+      case
+        Run.parseModuleRecovering
+          "module M where\nmain =\n  let\n    = 1\n    y = 2\n  in y\n"
+        of
+        Right (ParseRecovered errors _) -> Array.length errors `shouldEqual` 1
+        _ -> fail "expected a recovered parse"
+
+    it "reports every broken declaration, not only the first" do
+      case
+        Run.parseModuleRecovering
+          "module M where\n= 1\ngood = 2\n= 3\nalso = 4\n"
+        of
+        Right (ParseRecovered errors (C.Module _ _ _ decls)) -> do
+          Array.length errors `shouldEqual` 2
+          map declName decls `shouldEqual` [ "good", "also" ]
+        _ -> fail "expected a recovered parse"
+
+    it "says so plainly when nothing is wrong" do
+      case Run.parseModuleRecovering "module M where\nmain = 1\n" of
+        Right (ParseSucceeded (C.Module _ _ _ decls)) ->
+          map declName decls `shouldEqual` [ "main" ]
+        _ -> fail "expected a clean parse"
+
   describe "failures" do
     it "reports a syntax error against the token the parser stopped at" do
       case typeOf "Maybe -> ->" of
@@ -225,3 +271,10 @@ main = runSpecAndExitProcess [ consoleReporter ] do
       case exprOf "1 \x00 2" of
         Right e -> fail ("expected a lex error, got " <> show e)
         Left message -> (message /= "") `shouldEqual` true
+
+-- | The name a declaration binds, for saying which ones survived.
+declName :: C.Decl -> String
+declName = case _ of
+  C.DeclValue n _ _ -> n.name
+  C.DeclSignature n _ -> n.name
+  _ -> "?"
