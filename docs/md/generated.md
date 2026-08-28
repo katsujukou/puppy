@@ -13,7 +13,9 @@ module Puppy.Fixture.Calculator
   ) where
 ```
 
-A `Token` type, and two functions for each `%start` symbol.
+A `Token` type, and two functions for each `%start` symbol -- or four, where
+the grammar says a parse may [carry on past an
+error](grammar.md#recovering-from-an-error).
 
 Where the grammar declared [`%tokentype`](grammar.md#tokentype) the token type
 is already yours, and the module exports the entry points alone:
@@ -127,6 +129,54 @@ left-recursive one folds as it goes.
 What is promised is therefore narrow and worth stating exactly: the hand-off
 between lexer and parser is one token wide, and no array of tokens is built.
 Total memory is what your lexer holds, plus what the grammar's LR stack needs.
+
+### Recovering entry points
+
+A grammar that says where a parse may carry on past an error — by naming
+[`ERROR`](grammar.md#recovering-from-an-error) in a rule — produces two more
+functions for each `%start`, the same pair again:
+
+```purescript
+expressionRecovering
+  :: Array Token
+  -> RecoveryResult Token Int
+
+expressionRecoveringFrom
+  :: forall m
+   . MonadRec m
+  => m (Maybe Token)
+  -> m (RecoveryResult Token Int)
+```
+
+Four names, and they are the product of two choices rather than four things to
+remember: an array or a source that is asked, and stopping at the first error
+or carrying on past it. The ones that stop are still there and are still the
+right ones for a build step, where the first mistake is the answer and a tree
+built around a hole is not wanted.
+
+```purescript
+import Puppy.Runtime (RecoveryResult(..))
+
+data RecoveryResult tok a
+  = ParseSucceeded a
+  | ParseRecovered (Array (ParseError tok)) a
+  | ParseFailed (Array (ParseError tok))
+```
+
+Three answers rather than two. `ParseSucceeded` is a parse with nothing wrong
+with it. `ParseRecovered` is a tree *and* the errors that were found on the way
+to it — which is what an editor wants, and what the `Either` the other entry
+points return has no room to say. `ParseFailed` is a parse that could not be
+finished, and it still carries every error found before it gave up.
+
+The errors are in the order they were found, and each `position` counts the
+tokens the parser was given before that one — including the ones it threw away,
+so a second error reports where it really was and not where it would have been
+if the first had not happened.
+
+A recovering parse asks its source for exactly the tokens it reads, throwing
+away and all, and asks for nothing after the end of input. The one-token-wide
+hand-off is the same as it was.
 
 ## End of input
 

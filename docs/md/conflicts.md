@@ -34,6 +34,17 @@ The dot in `expr -> expr . PLUS expr` is where the parser is. Shifting means
 carrying on through that alternative; reducing means the other alternative is
 finished and its value is about to be built.
 
+A state a parse can only reach after picking itself up from an earlier error
+says so, because the way in is then not an input anybody can type:
+
+```plain
+  after reading   module a constructor where
+  then recovering from a syntax error and reading   import
+  and seeing      a name
+```
+
+See [`ERROR`](grammar.md#recovering-from-an-error) for what puts one there.
+
 ## Shift/reduce
 
 Almost always precedence, and almost always meant. `1 + 2 + 3` reaches the
@@ -54,6 +65,10 @@ associativity work.
 Where a conflict is not about an operator, `%prec` moves one alternative to a
 different rank, and [`%inline`](grammar.md#inline)
 folds away a rule whose reduction has to happen too early.
+
+`ERROR` is the one terminal that cannot be given a precedence, so a conflict on
+it is settled with `%shift` or not at all. A report about one says as much
+rather than suggesting a declaration that would be refused.
 
 And sometimes shifting is simply right, with no ranking behind it. The dangling
 `else` is the standard case: having read `if c then s` and seeing an `else`,

@@ -442,6 +442,86 @@ apply(F, X):
 Puppy has no standard library of these. `list`, `option` and their relatives
 are five lines each and yours to name.
 
+## Recovering from an error
+
+A parse that stops at the first thing wrong with its input is the right answer
+for a build step and the wrong one for an editor, which wants every mistake it
+can be told about and a tree covering as much of the file as there is.
+
+`ERROR` is how a grammar says where a parse may be picked up again.
+
+```plain
+decl:
+  | n = ident "::" t = type { Signature n t }
+  | e = ERROR SEMI          { Broken e }
+```
+
+It is a terminal, and it is the only reserved name a rule may write. No lexer
+produces one and no input contains one: it reaches the parser from the recovery
+that puts it there, and nowhere else.
+
+### What happens
+
+When the parser meets a token it cannot use, it looks down its own stack for a
+state that could shift an `ERROR`, puts one there, and then throws tokens away
+until it finds one it can carry on from. The rule that mentioned `ERROR` then
+reduces like any other, and its semantic action builds whatever a hole in the
+tree should be for this language.
+
+Where you write it decides how much is thrown away. `ERROR SEMI` above says a
+broken declaration ends at the next `;`, which is usually the smallest thing
+worth giving up on. `ERROR` alone in a list of items says the same about one
+item.
+
+### What it carries
+
+The value is the error the parse would otherwise have stopped with:
+
+```purescript
+e :: ParseError Token
+```
+
+So a hole in the tree can say what was expected and where. Ignoring it is
+fine — the parse collects every error whether or not any rule looks at one, and
+hands them back with the tree.
+
+### What may be written, and what may not
+
+`ERROR` may be referred to on the right of a production, including as the
+argument to a [parameterised rule](#parameterised-rules). Everything else is an
+error:
+
+| written | |
+| --- | --- |
+| `%token ERROR` | it is not declared; Puppy has it already |
+| `%left ERROR` | it has no precedence to give it |
+| `%prec ERROR` | the same |
+| `%start { X } ERROR` | it is a terminal, not a rule |
+| `%type { X } ERROR` | the same |
+| `ERROR: | ...` | the same |
+| `rule(ERROR):` | a parameter is a name, and this one is taken |
+
+Naming it changes what the module exports — see [the generated
+module](generated.md#recovering-entry-points) — and nothing else. A grammar
+that never mentions `ERROR` produces the same table it always did, the same
+terminal numbers, and the same two entry points per `%start`.
+
+### Conflicts
+
+`ERROR` takes part in the tables like any other terminal, so a rule that
+mentions it can be in a conflict like any other rule, and it is reported like
+any other. What it cannot do is take a precedence, so
+[`%shift`](#shift) is the only way to settle one deliberately.
+
+A conflict report says when the way into a state went through a recovery,
+because a path that did is not an input anybody can type:
+
+```plain
+  after reading   module a constructor where
+  then recovering from a syntax error and reading   import
+  and seeing      a name
+```
+
 ## Names
 
 A grammar's names end up in different places, and each place has its own rules.
