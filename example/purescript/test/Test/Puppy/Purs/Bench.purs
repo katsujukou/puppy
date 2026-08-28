@@ -35,6 +35,7 @@ import Node.Encoding (Encoding(..))
 import Node.FS.Sync as FS
 import Node.Process as Process
 import Puppy.Purs.Run as Run
+import Puppy.Runtime (RecoveryResult(..))
 import PureScript.CST as CST
 import PureScript.CST.Lexer as Lexer
 import PureScript.CST.TokenStream (TokenStep(..))
@@ -75,11 +76,13 @@ main = do
       -- quickly it gives up, and come out ahead for it.
       unless (lexes source) (die (path <> ": the lexer does not read it"))
       unless (puppyParses source) (die (path <> ": puppy does not parse it"))
+      unless (puppyRecovers source) (die (path <> ": puppy does not parse it cleanly"))
       unless (cstParses source) (die (path <> ": language-cst-parser does not parse it"))
 
       Console.log (path <> ": " <> show (SCU.length source) <> " characters")
       time "lex only           " \_ -> lexes source
       time "puppy              " \_ -> puppyParses source
+      time "puppy (recovering) " \_ -> puppyRecovers source
       time "language-cst-parser" \_ -> cstParses source
   where
   die message = do
@@ -96,6 +99,13 @@ main = do
   puppyParses source = case Run.parseModule source of
     Right inner -> isRight inner
     Left _ -> false
+
+  -- The recovering entry point over a file with nothing wrong with it, which
+  -- is what prices carrying a recovery path for a parse that never needs one.
+  -- Only a clean answer counts, for the same reason it does below.
+  puppyRecovers source = case Run.parseModuleRecovering source of
+    Right (ParseSucceeded _) -> true
+    _ -> false
 
   -- Only a clean parse counts. `ParseSucceededWithErrors` means the recovery
   -- path ran, which is neither the same work nor the same answer.

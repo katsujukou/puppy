@@ -16,7 +16,7 @@ example/purescript/
   src/Puppy/Purs/CST.purs      the tree it builds, hand written
   src/Puppy/Purs/Run.purs      lexer in, tree out
   test/Test/Puppy/Purs.purs    source text in, trees out
-  test/Test/Puppy/Purs/Bench.purs   the two parsers, same file
+  test/Test/Puppy/Purs/Bench.purs   the parsers, same file
 ```
 
 Regenerating:
@@ -31,10 +31,10 @@ spago run -p puppy-cli -- example/purescript/src/Puppy/Purs/Parser.pursy \
 | | |
 | --- | ---: |
 | `Parser.y` | 811 lines |
-| `Parser.pursy` | 830 lines |
-| Generated module | 478 KB |
-| LR states | 647 |
-| Terminals / productions | 75 / 399 |
+| `Parser.pursy` | 836 lines |
+| Generated module | 487 KB |
+| LR states | 650 |
+| Terminals / productions | 76 / 402 |
 | Time to generate | ~2s |
 | Conflicts | 0 unsettled; 70 settled by `%shift` |
 | Warnings from the PureScript compiler on the generated module | 0 |
@@ -59,11 +59,18 @@ parseModule = runWith lexModule P.parseModuleFrom
 Both sides lex with the same lexer, so the cost of that is in both numbers and
 is measured on its own as well.
 
-| file | lex | puppy | language-cst-parser |
-| --- | ---: | ---: | ---: |
-| `Codegen.purs` (38 KB) | 7.7ms | 16.3ms | 14.8ms |
-| `Expand.purs` (35 KB) | 7.6ms | 16.3ms | 15.3ms |
-| `Driver.purs` (12 KB) | 1.6ms | 3.2ms | 2.8ms |
+| file | lex | puppy | puppy, recovering | language-cst-parser |
+| --- | ---: | ---: | ---: | ---: |
+| `Codegen.purs` (43 KB) | 14.0ms | 29.3ms | 29.9ms | 28.6ms |
+| `Expand.purs` (39 KB) | 14.1ms | 29.5ms | 29.0ms | 27.6ms |
+| `Driver.purs` (26 KB) | 5.9ms | 12.3ms | 12.3ms | 10.9ms |
+
+Read the columns against each other and not against another machine. These are
+milliseconds on the one this was run on, and an earlier run of the same three
+files on the same machine put every column at about six tenths of what is here
+— `language-cst-parser` included, which is the arm nothing in this repository
+has touched. What holds across both runs is the ratio, and that is the figure
+the rest of this section is about.
 
 Best of ten samples. A sample is however many repetitions come to at least
 200ms, divided back down: `Date.now` counts whole milliseconds, and a single
@@ -73,9 +80,10 @@ from measuring rather than estimating -- twice, so that the count is settled on
 warm code rather than on the cold run -- and the benchmark prints the shortest
 sample it took, so that the floor can be seen to have held.
 
-End to end Puppy takes about a tenth longer. Taking the lexer out -- which is
-approximate, since the two hold the tokens differently -- the parsing itself is
-roughly 8.6ms against 7.2ms on the larger files, about a fifth longer.
+End to end Puppy is between two and thirteen per cent longer, and widest on the
+smallest of the three. Taking the lexer out -- which is approximate, since the
+two hold the tokens differently -- the parsing itself is roughly 15.3ms against
+14.0ms on the larger two, under a tenth longer.
 
 It was half as long again until recently, and what closed most of the gap was
 not the algorithm. `resume` worked out which terminal the lookahead was on
@@ -92,10 +100,29 @@ generated table-driven parser landing in the same range as a hand-written
 combinator parser that has been tuned for years is closer than the shape of the
 two would suggest.
 
-Neither side is doing error recovery here: `language-cst-parser` can carry on
-past a failure and hand back a tree with error nodes in it, and the benchmark
-counts only a clean `ParseSucceeded` so that the recovery path is not being
-timed instead.
+## What recovery costs
+
+Nothing that shows. The fourth column is `parseModuleRecovering` over the same
+three files, every one of which parses cleanly — so what is priced there is
+carrying a recovery path, not using one. It lands within two per cent of the
+entry point that has none, in both directions across the three files, which is
+inside the scatter of the `language-cst-parser` column beside it.
+
+The table it reads from grew, and that was measured on its own. Generating the
+grammar with the three `ERROR` alternatives and without them gives 650 states
+against 647 and a row of 76 against 75 — 1.8% more table — and timing the two
+generated parsers against each other separates them by no more than 2.5%, in no
+consistent direction, on a benchmark whose untouched arm moves by 4% between
+runs. Three recovery points cost three states and one column, and no time.
+
+Which is what declaring the points rather than searching for them is for. A
+recovering parse is the same loop until something goes wrong; the extra work is
+at the point where a parse would otherwise have stopped, and a file with
+nothing wrong with it never arrives there.
+
+Both sides are timed on clean input only. `language-cst-parser` can carry on
+past a failure as well, and timing one side's recovery against the other's is a
+different measurement than this one.
 
 ## Where the upstream grammar is not LR(1)
 
@@ -135,21 +162,21 @@ Found by doing this, in the order they cost the most.
 
 ### 1. ~~No way to prefer a shift~~ — added
 
-This is what the port was for. All 68 conflicts wanted the same thing, shift,
+This is what the port was for. All 70 conflicts wanted the same thing, shift,
 at the same sites Happy handles with `%shift`:
 
 | Reduce that loses | Times | Upstream |
 | --- | ---: | --- |
 | `expr3 -> expr4` (application continues) | 33 | `expr3 : expr4 %shift` |
 | `type4 -> type5` (application continues) | 18 | `type4 : type5 %shift` |
-| `type2 -> type3` | 6 | `type2 : type3 %shift` |
-| `expr -> expr1` | 6 | `expr : expr1 %shift` |
-| six others | 5 | mostly `%shift` too |
+| `type2 -> type3` | 7 | `type2 : type3 %shift` |
+| `expr -> expr1` | 7 | `expr : expr1 %shift` |
+| five others | 5 | mostly `%shift` too |
 
 Puppy already shifted — that is its default when nothing settles a conflict —
 so the generated parser was already correct. What it would not do was generate
-without `--allow-conflicts`, which turns a grammar with 68 deliberate decisions
-into one with 68 unexplained ones and buries any real conflict that turns up
+without `--allow-conflicts`, which turns a grammar with 70 deliberate decisions
+into one with 70 unexplained ones and buries any real conflict that turns up
 later.
 
 `%prec` could express it in principle, since the resolution rule is the usual
@@ -158,10 +185,10 @@ conflict with *every token that can start an operand* — 33 of them for `expr3`
 — so preferring the shift would have meant giving 33 tokens a precedence level
 and changing what they mean everywhere else.
 
-[`%shift`](../../docs/md/grammar.md#shift) was added for this. Seven marks in
-the grammar settle 67 of the 68; the last one was a genuine ambiguity of this
+[`%shift`](../../docs/md/grammar.md#shift) was added for this. Eight marks in
+the grammar settle 69 of the 70; the last one is a genuine ambiguity of this
 port's own — `(Foo a)` after `class` is both a parenthesised constraint and a
-one-element list of constraints — and is settled by an eighth. The action table
+one-element list of constraints — and is settled by a ninth. The action table
 is byte-for-byte what it was, and the tests the port had at the time were
 unchanged.
 
@@ -212,7 +239,7 @@ inference but gives up the checking `%type` exists for.
 The way round is a typed wrapper per instantiation, and this grammar has
 seventeen of them:
 
-```
+```plain
 %type { Array C.Type } typeAtoms
 
 typeAtoms:
@@ -257,14 +284,14 @@ would.
   automaton does not have.
 - **The conflict reports are readable on a real grammar.** Every one names a
   concrete input that reaches the state — `after reading class ( a constructor
-  / and seeing )` — rather than a state number. On 68 conflicts across 641
+  / and seeing )` — rather than a state number. On 70 conflicts across 650
   states that is the difference between a report and a wall.
 - **Parameterised rules carried the weight.** `many`, `manySep`, `delimited`
   and `layout` are the whole of the boilerplate, the same five-line helpers
   `Parser.y` opens with.
 - **The generated module compiles clean.** 4,859 lines, no warnings, under
   `--strict`-shaped settings.
-- **It is fast.** About two seconds from grammar to module for 641 states, run
+- **It is fast.** About two seconds from grammar to module for 650 states, run
   straight through `node`.
 
 ## What is not here
@@ -278,8 +305,11 @@ would.
   position of every name. Building the first from this grammar is what a real
   compatibility claim would need, and it is a bigger piece of work than the
   grammar was.
-- **Error recovery.** `PureScript.CST` can carry on past a failure and hand
-  back a tree with error nodes in it. This stops.
+- **Recovery anywhere but a declaration, a `let` binding or a `do` statement.**
+  Those are the three the grammar declares, and they are the three the layout
+  pass has already marked the ends of. `PureScript.CST` carries on in more
+  places than that, and a parse that goes wrong inside a type or an expression
+  gives up here where it would not there.
 - **A shebang anywhere but a module.** `parseModule` lexes with `lexModule`,
   which allows for one; the entry points that take a fragment use `lex`, which
   does not, because a fragment cannot have one.
