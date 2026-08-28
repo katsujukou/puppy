@@ -9,6 +9,7 @@ import Test.Puppy.LR.Automaton as LRAutomaton
 import Test.Puppy.LR.Grammar as LRGrammar
 import Test.Puppy.LR.Pager as LRPager
 import Test.Puppy.LR.Table as LRTable
+import Test.Puppy.Runtimes as Runtimes
 import Test.Puppy.Syntax.Lexer as Lexer
 import Test.Puppy.Syntax.Parser as Parser
 import Test.Spec.Reporter (consoleReporter)
@@ -27,3 +28,4 @@ main = runSpecAndExitProcess [ consoleReporter ] do
   LRPager.spec
   LRTable.spec
   LRTable.explainSpec
+  Runtimes.spec
