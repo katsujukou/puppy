@@ -526,10 +526,6 @@ explainSpec = describe "Puppy.LR.Explain" do
           mentions text "do not"
           when (contains (Pattern "Nothing in the grammar says") text) do
             fail ("disagreeing precedences reported as absent ones:\n" <> text)
-  where
-  mentions text needle =
-    when (not (contains (Pattern needle) text)) do
-      fail ("expected the report to mention " <> show needle <> ", got:\n" <> text)
 
 -- | Reading a conflict report, which is text and is meant to be.
 mentions :: String -> String -> Aff Unit

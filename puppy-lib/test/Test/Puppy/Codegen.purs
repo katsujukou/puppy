@@ -189,14 +189,14 @@ startsWith prefix text = SCU.take (SCU.length prefix) text == prefix
 -- | Puppy wrote in place of a `$$` says the opposite, and is checked by
 -- | `uncoveredHoles` instead.
 misplacedLines :: String -> String -> SourceMapping -> Array String
-misplacedLines grammar source m
+misplacedLines _ _ m
   | not m.verbatim = []
-misplacedLines grammar source m =
+misplacedLines written source m =
   Array.mapMaybe check (Array.mapWithIndex Tuple fragment)
   where
   fragment = split (P.Pattern "\n")
     ( SCU.take (m.source.end.offset - m.source.start.offset)
-        (SCU.drop m.source.start.offset grammar)
+        (SCU.drop m.source.start.offset written)
     )
 
   check (Tuple k expected) =
@@ -229,13 +229,13 @@ placeholderOffsets text = Array.filter isHole
 
 -- | The line the fragment should have ended on.
 badEnd :: String -> SourceMapping -> Boolean
-badEnd grammar m = m.generated.end.line /= m.generated.start.line + newlines
+badEnd written m = m.generated.end.line /= m.generated.start.line + newlines
   where
   newlines =
     Array.length
       ( split (P.Pattern "\n")
           ( SCU.take (m.source.end.offset - m.source.start.offset)
-              (SCU.drop m.source.start.offset grammar)
+              (SCU.drop m.source.start.offset written)
           )
       ) - 1
 
