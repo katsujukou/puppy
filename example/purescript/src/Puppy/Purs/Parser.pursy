@@ -487,9 +487,12 @@ recordUpdate:
   | l = label LBRACE us = recordUpdates RBRACE     { C.RecordUpdateBranch l us }
 
 -- A `let` binding is parsed as a binder followed by what a value binding takes,
--- and told apart afterwards. `x = e` is both a name binding and a pattern
--- binding as far as an LR automaton is concerned; upstream settles that with
--- happy's `%shift`, which Puppy has no equivalent of.
+-- and told apart afterwards. `x = e` is both a name binding with no arguments
+-- and a pattern binding as far as an LR automaton is concerned; upstream keeps
+-- its three alternatives apart with `%shift` on `binderAtom -> ident`. This
+-- grammar has `%shift` too and uses it in nine other places, but takes the same
+-- route here as `doStatement` does: one production for the widest of the
+-- shapes, and `C.letBinding` to read back which of them it was.
 letBinding:
   | e = ERROR                   { C.LetBroken (C.brokenAt e) }
   | n = ident DCOLON t = type   { C.LetSignature n t }

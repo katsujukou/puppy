@@ -360,7 +360,8 @@ data DeclChain
 data KindKeyword = KindData | KindNewtype | KindType | KindClass
 
 data Decl
-  = DeclData DataHead (Array DataCtor)
+  = DeclBroken (Maybe T.SourcePos)
+  | DeclData DataHead (Array DataCtor)
   | DeclType DataHead Type
   | DeclNewtype DataHead Name Type
   | DeclKindSignature KindKeyword Name Type
@@ -687,7 +688,12 @@ moduleOf n exports chains =
     ChainImport i -> Just i
     _ -> Nothing
 
+  -- The hole goes into the declarations, in the place the unreadable one was.
+  -- Dropping it here would leave a `Module` that reads as though the file had
+  -- one declaration fewer and nothing wrong with it, which is the opposite of
+  -- what recovering is for: the errors come back beside the tree, and the tree
+  -- is what says where they were.
   declsOf = case _ of
     ChainImport _ -> []
     ChainDecls ds -> ds
-    ChainBroken _ -> []
+    ChainBroken at -> [ DeclBroken at ]

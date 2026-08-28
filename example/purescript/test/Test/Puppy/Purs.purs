@@ -221,6 +221,9 @@ main = runSpecAndExitProcess [ consoleReporter ] do
     -- A declaration nobody can read ends where the next one begins. Everything
     -- around it is still read, which is what an editor wants and what the
     -- entry points that stop at the first error cannot give.
+    -- The hole stays in the tree, where the declaration was. A module that
+    -- simply had one declaration fewer would read as though the file were
+    -- fine, and the position is what a later pass has to put a marker on.
     it "reads the declarations either side of a broken one" do
       case Run.parseModuleRecovering "module M where\ngood = 2\n= 1\nalso = 3\n" of
         Left _ -> fail "expected the lexer to manage"
@@ -228,13 +231,21 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         Right (ParseFailed _) -> fail "expected it to carry on"
         Right (ParseRecovered errors (C.Module _ _ _ decls)) -> do
           Array.length errors `shouldEqual` 1
-          map declName decls `shouldEqual` [ "good", "also" ]
+          map declName decls `shouldEqual` [ "good", "<broken 2:0>", "also" ]
 
     -- Three places say a parse may be picked up again, and each of them is a
-    -- list the layout pass has already marked the boundaries of.
+    -- list the layout pass has already marked the boundaries of. What is
+    -- checked is both halves: that the broken one became a hole, and that the
+    -- good one after it is still there and still whole.
     it "carries on inside a `do` block" do
       case Run.parseModuleRecovering "module M where\nmain = do\n  = 1\n  pure 2\n" of
-        Right (ParseRecovered errors _) -> Array.length errors `shouldEqual` 1
+        Right (ParseRecovered errors m) -> do
+          Array.length errors `shouldEqual` 1
+          doStatements m `shouldEqual`
+            [ C.DoBroken (Just { line: 2, column: 2 })
+            , C.DoDiscard
+                (C.ExprApp (C.ExprIdent (qn 3 2 "pure")) (C.ExprInt 2))
+            ]
         _ -> fail "expected a recovered parse"
 
     it "carries on inside a `let` block" do
@@ -242,7 +253,13 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         Run.parseModuleRecovering
           "module M where\nmain =\n  let\n    = 1\n    y = 2\n  in y\n"
         of
-        Right (ParseRecovered errors _) -> Array.length errors `shouldEqual` 1
+        Right (ParseRecovered errors m) -> do
+          Array.length errors `shouldEqual` 1
+          letBindings m `shouldEqual`
+            [ C.LetBroken (Just { line: 3, column: 4 })
+            , C.LetName (nm 4 4 "y") []
+                (C.Unconditional (C.Where (C.ExprInt 2) []))
+            ]
         _ -> fail "expected a recovered parse"
 
     it "reports every broken declaration, not only the first" do
@@ -252,7 +269,8 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         of
         Right (ParseRecovered errors (C.Module _ _ _ decls)) -> do
           Array.length errors `shouldEqual` 2
-          map declName decls `shouldEqual` [ "good", "also" ]
+          map declName decls `shouldEqual`
+            [ "<broken 1:0>", "good", "<broken 3:0>", "also" ]
         _ -> fail "expected a recovered parse"
 
     it "says so plainly when nothing is wrong" do
@@ -272,9 +290,27 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         Right e -> fail ("expected a lex error, got " <> show e)
         Left message -> (message /= "") `shouldEqual` true
 
--- | The name a declaration binds, for saying which ones survived.
+-- | The name a declaration binds, for saying which ones survived -- and, for
+-- | one that could not be read, where it was, so that the hole is pinned to a
+-- | position and not merely counted.
 declName :: C.Decl -> String
 declName = case _ of
   C.DeclValue n _ _ -> n.name
   C.DeclSignature n _ -> n.name
+  C.DeclBroken (Just p) -> "<broken " <> show p.line <> ":" <> show p.column <> ">"
+  C.DeclBroken Nothing -> "<broken>"
   _ -> "?"
+
+-- | The statements of the `do` block a module's only declaration is.
+doStatements :: C.Module -> Array C.DoStatement
+doStatements = case _ of
+  C.Module _ _ _ [ C.DeclValue _ _ (C.Unconditional (C.Where (C.ExprDo ss) _)) ] ->
+    ss
+  _ -> []
+
+-- | The bindings of the `let` block a module's only declaration is.
+letBindings :: C.Module -> Array C.LetBinding
+letBindings = case _ of
+  C.Module _ _ _ [ C.DeclValue _ _ (C.Unconditional (C.Where (C.ExprLet bs _) _)) ] ->
+    bs
+  _ -> []
