@@ -23,6 +23,7 @@ import Puppy.Fixture.Calculator (Token(..))
 import Puppy.Fixture.External.Calculator as External
 import Puppy.Fixture.External.Tally as Tally
 import Puppy.Fixture.External.Recovering as Recovering
+import Puppy.Runtime (RecoveryResult(..)) as C
 import Puppy.Fixture.External.Whole as Whole
 import Puppy.Fixture.External.Token as T
 import Puppy.Fixture.External.Word as W
@@ -31,7 +32,7 @@ import Puppy.Fixture.Awkward as Awkward
 import Puppy.Fixture.Lists as Lists
 import Test.Puppy.Fixture.Offside as Offside
 import Test.Spec (describe, it)
-import Test.Spec.Assertions (shouldEqual)
+import Test.Spec.Assertions (fail, shouldEqual)
 import Test.Spec.Reporter (consoleReporter)
 import Test.Spec.Runner.Node (runSpecAndExitProcess)
 
@@ -349,6 +350,37 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         , [ T.At 0 (T.Number 1), T.At 2 T.Plus, T.At 4 T.Space ]
         ]
         `shouldEqual` [ Just 0, Just 1, Just 2 ]
+
+    -- The whole of it, end to end: a token the grammar cannot use is thrown
+    -- away, an `ERROR` stands where it was, and the parse finishes with the
+    -- diagnostic kept.
+    it "carries on past a token it cannot use" do
+      case
+        Recovering.totalRecovering
+          [ T.At 0 (T.Number 1)
+          , T.At 2 T.Plus
+          , T.At 4 T.Space
+          , T.At 6 T.Plus
+          , T.At 8 (T.Number 2)
+          ]
+        of
+        C.ParseRecovered errors value -> do
+          value `shouldEqual` "1+?2+2"
+          map _.position errors `shouldEqual` [ 2 ]
+        other -> fail ("expected a recovered parse, got " <> show other)
+
+    it "says plainly when nothing went wrong" do
+      case Recovering.totalRecovering [ T.At 0 (T.Number 1) ] of
+        C.ParseSucceeded value -> value `shouldEqual` "1"
+        other -> fail ("expected a clean parse, got " <> show other)
+
+    it "pulls its tokens one at a time too" do
+      case
+        State.evalState (Recovering.totalRecoveringFrom oneAtATime)
+          [ T.At 0 (T.Number 1), T.At 2 T.Plus, T.At 4 T.Space ]
+        of
+        C.ParseRecovered errors _ -> map _.position errors `shouldEqual` [ 2 ]
+        other -> fail ("expected a recovered parse, got " <> show other)
 
     it "keeps `ERROR` out of the tokens it says were expected" do
       map (map _.expected <<< leftOf <<< Recovering.total) [ [ T.At 0 T.Plus ] ]

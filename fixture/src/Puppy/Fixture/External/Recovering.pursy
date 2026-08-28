@@ -19,13 +19,19 @@ import Puppy.Fixture.External.Token as T
 %token PLUS "+" { T.At _ T.Plus }
 %token { Int } NUMBER "a number" { T.At _ (T.Number $$) }
 
-%start { String } total
+-- A start symbol named after a helper the generated module writes, so that the
+-- two are shown not to collide. `puppyFromRecovered` is what the helper is
+-- called, and the `puppy` prefix is reserved for exactly this reason.
+%start { String } total fromRecovered
 
-%type { String } total expr
+%type { String } total fromRecovered expr
 
 %%
 
 total:
+  | e = expr { e }
+
+fromRecovered:
   | e = expr { e }
 
 expr:

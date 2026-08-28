@@ -8,6 +8,12 @@
 module Puppy.Fixture.External.Recovering
   ( total
   , totalFrom
+  , totalRecovering
+  , totalRecoveringFrom
+  , fromRecovered
+  , fromRecoveredFrom
+  , fromRecoveredRecovering
+  , fromRecoveredRecoveringFrom
   ) where
 
 import Prelude
@@ -66,7 +72,9 @@ productionTable =
   , { lhs: 1, arity: 1, name: "expr -> NUMBER" }
   , { lhs: 1, arity: 3, name: "expr -> expr PLUS expr" }
   , { lhs: 1, arity: 1, name: "expr -> ERROR" }
-  , { lhs: 2, arity: 1, name: "<start total> -> total" }
+  , { lhs: 2, arity: 1, name: "fromRecovered -> expr" }
+  , { lhs: 3, arity: 1, name: "<start total> -> total" }
+  , { lhs: 4, arity: 1, name: "<start fromRecovered> -> fromRecovered" }
   ]
 
 productionAt :: Int -> Puppy.Runtime.ProductionInfo
@@ -108,6 +116,15 @@ semanticActionTable =
       in
         Puppy.Runtime.box
           (("?" <> show e.position) :: String)
+  , \puppyValues ->
+      let
+        e :: String
+        e = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+      in
+        Puppy.Runtime.box
+          ((e) :: String)
+  , \_ -> Puppy.Runtime.internalError
+      "the start production has no semantic action"
   , \_ -> Puppy.Runtime.internalError
       "the start production has no semantic action"
   ]
@@ -121,9 +138,13 @@ semanticActionAt puppyIndex = case Puppy.Deps.index semanticActionTable puppyInd
 actionTable :: Array Int
 actionTable =
   [ 0
-  , 3
+  , 4
+  , 0
+  , 5
   , 0
   , 4
+  , 0
+  , 5
   , -2
   , 0
   , -2
@@ -131,22 +152,30 @@ actionTable =
   , -4
   , 0
   , -4
+  , 0
+  , 8
+  , 0
+  , -5
   , 0
   , 0
   , 0
   , 1
   , 0
-  , 7
-  , 0
-  , -1
-  , 0
-  , 0
-  , 3
   , 0
   , 4
-  , 7
+  , 0
+  , 5
+  , 8
   , 0
   , -3
+  , 0
+  , 0
+  , 0
+  , 1
+  , 0
+  , 8
+  , 0
+  , -1
   , 0
   ]
 
@@ -165,12 +194,15 @@ actionAt puppyState puppyTerminal =
 
 gotoRows :: Array (Array { on :: Int, to :: Int })
 gotoRows =
-  [ [ { on: 0, to: 3 }, { on: 1, to: 4 } ]
+  [ [ { on: 0, to: 8 }, { on: 1, to: 9 } ]
+  , [ { on: 1, to: 4 }, { on: 2, to: 5 } ]
   , []
   , []
   , []
   , []
-  , [ { on: 1, to: 6 } ]
+  , [ { on: 1, to: 7 } ]
+  , []
+  , []
   , []
   ]
 
@@ -231,6 +263,19 @@ runArray puppyInput puppyIndex puppyStep = case puppyStep of
   Puppy.Runtime.Done puppyValue -> Puppy.Deps.Right puppyValue
   Puppy.Runtime.Failed puppyError -> Puppy.Deps.Left puppyError
 
+puppyFromRecovered
+  :: forall puppyResult
+   . Puppy.Runtime.RecoveryResult (Puppy.Deps.Maybe (T.Token)) Puppy.Runtime.Value
+  -> Puppy.Runtime.RecoveryResult (T.Token) puppyResult
+puppyFromRecovered = case _ of
+  Puppy.Runtime.ParseSucceeded puppyValue ->
+    Puppy.Runtime.ParseSucceeded (Puppy.Runtime.unbox puppyValue)
+  Puppy.Runtime.ParseRecovered puppyErrors puppyValue ->
+    Puppy.Runtime.ParseRecovered (map toParseError puppyErrors)
+      (Puppy.Runtime.unbox puppyValue)
+  Puppy.Runtime.ParseFailed puppyErrors ->
+    Puppy.Runtime.ParseFailed (map toParseError puppyErrors)
+
 total :: Array (T.Token) -> Puppy.Deps.Either (Puppy.Runtime.ParseError (T.Token)) (String)
 total puppyInput =
   fromResult (runArray puppyInput 0 (Puppy.Runtime.start (tableFor 0)))
@@ -242,3 +287,41 @@ totalFrom
   -> m (Puppy.Deps.Either (Puppy.Runtime.ParseError (T.Token)) (String))
 totalFrom puppyNext =
   map fromResult (Puppy.Runtime.parseM (tableFor 0) puppyNext)
+
+totalRecovering :: Array (T.Token) -> Puppy.Runtime.RecoveryResult (T.Token) (String)
+totalRecovering puppyInput =
+  puppyFromRecovered
+    (Puppy.Runtime.parseRecoveringAt (tableFor 0) (Puppy.Deps.index puppyInput))
+
+totalRecoveringFrom
+  :: forall m
+   . Puppy.Deps.MonadRec m
+  => m (Puppy.Deps.Maybe (T.Token))
+  -> m (Puppy.Runtime.RecoveryResult (T.Token) (String))
+totalRecoveringFrom puppyNext =
+  map puppyFromRecovered (Puppy.Runtime.parseMRecovering (tableFor 0) puppyNext)
+
+fromRecovered :: Array (T.Token) -> Puppy.Deps.Either (Puppy.Runtime.ParseError (T.Token)) (String)
+fromRecovered puppyInput =
+  fromResult (runArray puppyInput 0 (Puppy.Runtime.start (tableFor 1)))
+
+fromRecoveredFrom
+  :: forall m
+   . Puppy.Deps.MonadRec m
+  => m (Puppy.Deps.Maybe (T.Token))
+  -> m (Puppy.Deps.Either (Puppy.Runtime.ParseError (T.Token)) (String))
+fromRecoveredFrom puppyNext =
+  map fromResult (Puppy.Runtime.parseM (tableFor 1) puppyNext)
+
+fromRecoveredRecovering :: Array (T.Token) -> Puppy.Runtime.RecoveryResult (T.Token) (String)
+fromRecoveredRecovering puppyInput =
+  puppyFromRecovered
+    (Puppy.Runtime.parseRecoveringAt (tableFor 1) (Puppy.Deps.index puppyInput))
+
+fromRecoveredRecoveringFrom
+  :: forall m
+   . Puppy.Deps.MonadRec m
+  => m (Puppy.Deps.Maybe (T.Token))
+  -> m (Puppy.Runtime.RecoveryResult (T.Token) (String))
+fromRecoveredRecoveringFrom puppyNext =
+  map puppyFromRecovered (Puppy.Runtime.parseMRecovering (tableFor 1) puppyNext)

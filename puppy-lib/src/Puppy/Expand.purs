@@ -217,7 +217,7 @@ validate syn = Array.concat
   , startErrors
   , Array.concatMap badTokenName (tokensOf syn)
   , Array.concatMap badStartName syn.starts
-  , entryPointClashes
+  , entryPointClashes plainEntryPoints syn
   , externalDeriveErrors
   , placeholderErrors
   , duplicatePatternErrors
@@ -287,35 +287,6 @@ validate syn = Array.concat
           }
         ]
     | otherwise = []
-
-  -- Each start symbol produces two top-level names: an entry point of its own
-  -- name, and one with `From` appended that pulls its tokens. Two start
-  -- symbols can therefore collide without either having been declared twice,
-  -- which is what the duplicate check above would have caught.
-  entryPointClashes =
-    _.errors (Array.foldl declare { taken: Map.empty, errors: [] } syn.starts)
-    where
-    declare acc s = Array.foldl (claim s) acc
-      [ s.symbol, Names.streamingName s.symbol ]
-
-    claim s acc name = case Map.lookup name acc.taken of
-      Just owner
-        | owner.symbol /= s.symbol ->
-            acc { errors = Array.snoc acc.errors (clashes s owner name) }
-      _ ->
-        acc { taken = Map.insert name { symbol: s.symbol, span: s.span } acc.taken }
-
-    clashes s owner name =
-      { message: "start symbols `" <> s.symbol <> "` and `" <> owner.symbol
-          <> "` (line "
-          <> show owner.span.start.line
-          <> ", column "
-          <> show owner.span.start.column
-          <> ") both produce an entry point called `"
-          <> name
-          <> "`; each start symbol produces one of its own name and one with `From` appended"
-      , span: s.span
-      }
 
   externalTokens = case syn.tokens of
     Syntax.GeneratedTokens _ -> []
@@ -977,4 +948,72 @@ expand syn = case validate syn of
     | not (Array.null errors) -> Left errors
     | otherwise -> case build syn of
         Left err -> Left [ err ]
-        Right g -> Right g
+        Right g -> case entryPointClashes (allEntryPoints g) syn of
+          [] -> Right g
+          clashes -> Left clashes
+
+-- | The two names every start symbol produces.
+plainEntryPoints :: String -> Array String
+plainEntryPoints symbol = [ symbol, Names.streamingName symbol ]
+
+-- | Those, and the two more a grammar produces where it says a parse may carry
+-- | on past an error.
+-- |
+-- | Asked of the expanded grammar rather than the one that was written, so
+-- | that this and the generator are looking at the same thing. `ERROR` reaches
+-- | a production by being written in one, or by being handed to a
+-- | parameterised rule that writes it -- and a rule nothing reaches is not
+-- | instantiated at all, so an `ERROR` sitting in one produces no entry points
+-- | and must not be counted as though it did.
+allEntryPoints :: Grammar.Grammar -> String -> Array String
+allEntryPoints core symbol =
+  plainEntryPoints symbol <>
+    if namesError then
+      [ Names.recoveringName symbol, Names.recoveringStreamingName symbol ]
+    else []
+  where
+  namesError = Array.any mentionsError core.productions
+
+  mentionsError p =
+    Array.any (_ == Grammar.Terminal Syntax.errorToken.name) p.rhs
+
+-- | Two start symbols that would produce the same top-level name.
+-- |
+-- | Each one produces two: an entry point of its own name, and one with `From`
+-- | appended that pulls its tokens. A grammar that says where a parse may
+-- | carry on past an error produces two more. So two start symbols can collide
+-- | without either having been declared twice, which is what the duplicate
+-- | check would have caught.
+-- |
+-- | Which names a start symbol produces is the caller's to say, because the
+-- | answer is not known at the same time for all of them: the two every
+-- | grammar has can be checked with everything else that is wrong with the
+-- | grammar as written, and the two more that recovery adds cannot be known
+-- | until the rules have been instantiated. Reporting the first pair here
+-- | would mean reporting it after everything else had stopped the pass, and a
+-- | grammar with two things wrong with it is told about one of them.
+entryPointClashes
+  :: (String -> Array String) -> Syntax.Grammar -> Array ExpandError
+entryPointClashes entryPointsOf syn =
+  _.errors (Array.foldl declare { taken: Map.empty, errors: [] } syn.starts)
+  where
+  declare acc s = Array.foldl (claim s) acc (entryPointsOf s.symbol)
+
+  claim s acc name = case Map.lookup name acc.taken of
+    Just owner
+      | owner.symbol /= s.symbol ->
+          acc { errors = Array.snoc acc.errors (clashes s owner name) }
+    _ ->
+      acc { taken = Map.insert name { symbol: s.symbol, span: s.span } acc.taken }
+
+  clashes s owner name =
+    { message: "start symbols `" <> s.symbol <> "` and `" <> owner.symbol
+        <> "` (line "
+        <> show owner.span.start.line
+        <> ", column "
+        <> show owner.span.start.column
+        <> ") both produce an entry point called `"
+        <> name
+        <> "`; each start symbol produces one of its own name and one with `From` appended, and two more with `Recovering` where the grammar names `ERROR`"
+    , span: s.span
+    }

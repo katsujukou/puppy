@@ -13,6 +13,8 @@ module Puppy.Names
   , isReserved
   , takenByGeneratedCode
   , streamingName
+  , recoveringName
+  , recoveringStreamingName
   ) where
 
 import Prelude
@@ -125,3 +127,12 @@ takenByGeneratedCode name =
 -- | taken it, which it cannot do without knowing how the name is made.
 streamingName :: String -> String
 streamingName name = name <> "From"
+
+-- | The entry point that carries on past an error, for a grammar that says
+-- | where a parse may.
+recoveringName :: String -> String
+recoveringName name = name <> "Recovering"
+
+-- | The same one, pulling its tokens.
+recoveringStreamingName :: String -> String
+recoveringStreamingName = streamingName <<< recoveringName

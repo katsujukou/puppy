@@ -22,7 +22,7 @@ import Prelude
 import Data.Array as Array
 import Data.Map (Map)
 import Data.Map as Map
-import Data.Maybe (Maybe(..), fromMaybe, isJust, maybe)
+import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing, maybe)
 import Data.Char (toCharCode)
 import Data.Int (hexadecimal, toStringAs)
 import Data.String.CodeUnits as SCU
@@ -867,12 +867,47 @@ tableBuilder input e =
           <> "-- | what a lookup past the end of an array answers, so the same\n"
           <> "-- | `Puppy.Deps.index` both reads a token and says there are no more.\nrunArray\n"
 
+-- | Turning what the driver answered into what a caller was promised.
+-- |
+-- | The driver works in `Maybe Token` and reports `Value`; the entry points
+-- | report the token type the grammar named and the type the `%start` said.
+-- | `toParseError` and `unbox` are the two halves of that, and this is them
+-- | applied to each of the three answers a recovering parse can give.
+-- |
+-- | Nothing is written where the grammar never said a parse may carry on:
+-- | nothing would call it, and a name nothing calls is a warning in a file its
+-- | reader did not write.
+recoveredResult :: Input -> Emitter -> Emitter
+recoveredResult input acc
+  | isNothing input.grammar.errorTerminal = acc
+  | otherwise =
+      Emit.write "\npuppyFromRecovered\n" acc
+        # Emit.write (line 2 ":: forall puppyResult")
+        # Emit.write (spaces 3 <> ". Puppy.Runtime.RecoveryResult (Puppy.Deps.Maybe ")
+        # tokenRef input
+        # Emit.write ") Puppy.Runtime.Value\n"
+        # Emit.write (spaces 2 <> "-> Puppy.Runtime.RecoveryResult ")
+        # tokenRef input
+        # Emit.write " puppyResult\n"
+        # Emit.write "puppyFromRecovered = case _ of\n"
+        # Emit.write (line 2 "Puppy.Runtime.ParseSucceeded puppyValue ->")
+        # Emit.write (line 4 "Puppy.Runtime.ParseSucceeded (Puppy.Runtime.unbox puppyValue)")
+        # Emit.write (line 2 "Puppy.Runtime.ParseRecovered puppyErrors puppyValue ->")
+        # Emit.write (line 4 "Puppy.Runtime.ParseRecovered (map toParseError puppyErrors)")
+        # Emit.write (line 6 "(Puppy.Runtime.unbox puppyValue)")
+        # Emit.write (line 2 "Puppy.Runtime.ParseFailed puppyErrors ->")
+        # Emit.write (line 4 "Puppy.Runtime.ParseFailed (map toParseError puppyErrors)")
+
 -- | The two ways in, for each `%start`.
 -- |
 -- | One takes the tokens all at once and one asks for them as it needs them.
 -- | They share a table and a state, and differ only in where the next token
 -- | comes from, which is the whole point of the driver being a machine that
 -- | stops rather than a loop over an array.
+-- |
+-- | Four ways in, where the grammar says a parse may carry on past an error:
+-- | the same pair again, answering with what was wrong as well as with what
+-- | was read.
 entryPoints :: Input -> Emitter -> Emitter
 entryPoints input e = Array.foldl one e
   (Array.zipWith Tuple input.grammar.starts input.automaton.initial)
@@ -923,6 +958,50 @@ entryPoints input e = Array.foldl one e
                     <> ") puppyNext)"
                 )
           )
+      # recovering start state
+
+  -- Two more, where the grammar said a parse may carry on past an error. The
+  -- pair mirrors the one above: an array and a source that is asked, sharing
+  -- everything but where the next token comes from.
+  recovering start state acc
+    | isNothing input.grammar.errorTerminal = acc
+    | otherwise =
+        Emit.write ("\n" <> Names.recoveringName start.name <> " :: Array ") acc
+          # tokenRef input
+          # Emit.write " -> Puppy.Runtime.RecoveryResult "
+          # tokenRef input
+          # Emit.write " "
+          # resultType start
+          # Emit.write "\n"
+          # Emit.write
+              ( Names.recoveringName start.name <> " puppyInput =\n"
+                  <> line 2 "puppyFromRecovered"
+                  <> line 4
+                    ( "(Puppy.Runtime.parseRecoveringAt (tableFor " <> show state
+                        <> ") (Puppy.Deps.index puppyInput))"
+                    )
+              )
+          # Emit.write
+              ( "\n" <> Names.recoveringStreamingName start.name <> "\n"
+                  <> line 2 ":: forall m"
+                  <> line 3 ". Puppy.Deps.MonadRec m"
+                  <> spaces 2
+                  <> "=> m (Puppy.Deps.Maybe "
+              )
+          # tokenRef input
+          # Emit.write (")\n" <> spaces 2 <> "-> m (Puppy.Runtime.RecoveryResult ")
+          # tokenRef input
+          # Emit.write " "
+          # resultType start
+          # Emit.write ")\n"
+          # Emit.write
+              ( Names.recoveringStreamingName start.name <> " puppyNext =\n"
+                  <> line 2
+                    ( "map puppyFromRecovered (Puppy.Runtime.parseMRecovering (tableFor "
+                        <> show state
+                        <> ") puppyNext)"
+                    )
+              )
 
 -- | What the module exports.
 -- |
@@ -941,8 +1020,13 @@ exportList input = case Array.uncons exported of
   exported =
     (if external input then [] else [ "Token(..)" ])
       <> Array.concatMap
-        (\s -> [ s.name, Names.streamingName s.name ])
+        (\s -> [ s.name, Names.streamingName s.name ] <> recoveringNames s.name)
         input.grammar.starts
+
+  recoveringNames name
+    | isNothing input.grammar.errorTerminal = []
+    | otherwise =
+        [ Names.recoveringName name, Names.recoveringStreamingName name ]
 
 -- | The first line of every module Puppy writes.
 -- |
@@ -1004,6 +1088,7 @@ generate input =
         # actionTable input
         # gotoTable input
         # tableBuilder input
+        # recoveredResult input
         # entryPoints input
     in
       Right { source: Emit.render e, mappings: Emit.mappings e }

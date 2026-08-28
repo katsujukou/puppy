@@ -643,6 +643,43 @@ main: | x = loop { x }
       shouldFailWith "both produce an entry point"
         "%token A\n%start { X } expr\n%start { X } exprFrom\n%%\nexpr: | A { 1 }\nexprFrom: | A { 2 }\n"
 
+    -- The ordinary collision is one of the things wrong with a grammar as
+    -- written, and is reported alongside the rest of them. Checking it after
+    -- the rules had been instantiated would mean checking it only once
+    -- everything else had already stopped the pass.
+    it "reports a colliding entry point together with other static errors" do
+      shouldFailWithAll
+        [ "both produce an entry point", "is not a declared token" ]
+        """
+%token A
+%left NOPE
+%start { X } expr exprFrom
+%%
+expr: | A { 1 }
+exprFrom: | A { 2 }
+"""
+
+    -- `ERROR` reaches a production by being handed to a parameterised rule as
+    -- much as by being written in one, and either way the grammar produces
+    -- four entry points per start symbol rather than two.
+    it "rejects a Recovering collision where ERROR arrived as an argument" do
+      shouldFailWith "both produce an entry point"
+        """
+%token A
+%start { X } expr exprRecovering
+%%
+expr: | x = wrap(ERROR) { x }
+exprRecovering: | A { 2 }
+wrap(t): | t { 1 }
+"""
+
+    -- A rule nothing reaches is never instantiated, so an `ERROR` sitting in
+    -- one produces no entry points and must not be counted as though it did.
+    it "counts two entry points where the only ERROR is out of reach" do
+      case expanded unreachedError of
+        Left messages -> fail ("expected it to be accepted, got: " <> joinWith "; " messages)
+        Right _ -> pure unit
+
     it "says which other start symbol it collided with, and where" do
       shouldFailWith "`expr` (line 2, column 14)"
         "%token A\n%start { X } expr\n%start { X } exprFrom\n%%\nexpr: | A { 1 }\nexprFrom: | A { 2 }\n"
@@ -724,3 +761,16 @@ nowhereSpan :: Syntax.Span
 nowhereSpan = { start: nowhere, end: nowhere }
   where
   nowhere = { offset: 0, line: 1, column: 1 }
+
+-- | `ERROR` in a rule no start symbol reaches, and two start symbols whose
+-- | `Recovering` names would collide if it counted.
+unreachedError :: String
+unreachedError =
+  """
+%token A
+%start { X } expr exprRecovering
+%%
+expr: | A { 1 }
+exprRecovering: | A { 2 }
+unreached: | ERROR { 3 }
+"""

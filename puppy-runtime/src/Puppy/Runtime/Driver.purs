@@ -37,6 +37,7 @@ module Puppy.Runtime.Driver
   , canConsume
   , RecoveryResult(..)
   , parseMRecovering
+  , parseRecoveringAt
   , unexpectedEnd
   , parse
   , parseM
@@ -46,6 +47,7 @@ import Prelude
 
 import Control.Monad.Rec.Class (class MonadRec, tailRecM)
 import Control.Monad.Rec.Class as Rec
+import Control.Monad.State as State
 import Data.Array as Array
 import Data.Either (Either(..))
 import Data.List (List(..))
@@ -288,14 +290,9 @@ offer (Resume machine) tok = go machine.states machine.values
 
 -- | Give the parser the token it asked for.
 -- |
--- | This runs until the parser needs another one, which means every reduction
--- | the token calls for happens here: a lookahead can finish any number of
--- | productions before it is finally shifted, and none of that asks the caller
--- | for anything.
--- |
--- | End of input is a token like any other as far as this is concerned. The
--- | table decides what it means, which is how the driver stays ignorant of
--- | which terminal a particular grammar ends with.
+-- | `offer` above is the loop; this is the answer a caller who is not going to
+-- | carry on past an error wants to hear, which is the same one with the
+-- | stacks left out of the failure.
 resume :: forall tok val. Resume tok val -> tok -> Step tok val
 resume waiting tok = case offer waiting tok of
   Advanced next -> Await next
@@ -482,6 +479,15 @@ data RecoveryResult tok val
   | ParseRecovered (Array (ParseError tok)) val
   | ParseFailed (Array (ParseError tok))
 
+derive instance (Eq tok, Eq val) => Eq (RecoveryResult tok val)
+
+instance (Show tok, Show val) => Show (RecoveryResult tok val) where
+  show = case _ of
+    ParseSucceeded value -> "(ParseSucceeded " <> show value <> ")"
+    ParseRecovered errors value ->
+      "(ParseRecovered " <> show errors <> " " <> show value <> ")"
+    ParseFailed errors -> "(ParseFailed " <> show errors <> ")"
+
 -- | Where the recovery runner is in its work: reading tokens the ordinary way,
 -- | or throwing away the ones it cannot use yet.
 -- |
@@ -612,3 +618,28 @@ parseMRecovering table next = do
   answered errors value = case collected errors of
     [] -> ParseSucceeded value
     found -> ParseRecovered found value
+
+-- | Parse from something a caller can look up by position, recovering where it
+-- | can.
+-- |
+-- | `at` has to be total, and out past the end of the input it has to keep
+-- | answering with the terminal the grammar ends on. A generated module gets
+-- | that for nothing: its driver token is a `Maybe`, and looking past the end
+-- | of an array is `Nothing`, which is the end of input as far as the tables
+-- | are concerned.
+-- |
+-- | There is no second loop here. Reading by position is a token source like
+-- | any other once it is given somewhere to keep the position, so this is
+-- | `parseMRecovering` with that somewhere -- and no copy of the input is made
+-- | on the way.
+parseRecoveringAt
+  :: forall tok val
+   . Table tok val
+  -> (Int -> tok)
+  -> RecoveryResult tok val
+parseRecoveringAt table at = State.evalState (parseMRecovering table next) 0
+  where
+  next = do
+    index <- State.get
+    State.put (index + 1)
+    pure (at index)
