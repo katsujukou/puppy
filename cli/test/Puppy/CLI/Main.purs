@@ -29,6 +29,8 @@ import Puppy.CLI.Generate as Generate
 import Puppy.CLI.Effect.Filesystem as FS
 import Puppy.CLI.Workspace (Grammar, Package)
 import Puppy.CLI.Workspace as Workspace
+import Puppy.CLI.Version as Version
+import Puppy as Puppy
 import Run (Run)
 import Run as Run
 import Run.State (STATE)
@@ -408,3 +410,16 @@ main = runSpecAndExitProcess [ consoleReporter ] do
         Array.elem "write demo/src/Foo.purs" out.touched `shouldEqual` false
         map (contains (Pattern "not a terminal")) out.refused
           `shouldEqual` Just true
+
+  -- Puppy and `puppy-runtime` are installed separately, so the only thing
+  -- telling someone which runtime to ask for is what the tool says. If the
+  -- generator starts writing calls to a newer runtime and nobody teaches
+  -- `--version` to say so, a user's parser fails to build for a reason nothing
+  -- in front of them names.
+  describe "Puppy.CLI.Version" do
+    it "names every runtime version the generator supports" do
+      let named v = contains (Pattern v) Version.versionInfo
+      Array.filter (not <<< named) Puppy.runtimeVersions `shouldEqual` []
+
+    it "names the version of the tool itself" do
+      contains (Pattern Version.version) Version.versionInfo `shouldEqual` true

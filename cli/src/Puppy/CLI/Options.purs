@@ -13,14 +13,14 @@ import Prelude
 import ArgParse.Basic as ArgParser
 import Data.Either (Either)
 import Puppy.CLI.Generate as Generate
-import Puppy.CLI.Version (version)
+import Puppy.CLI.Version (versionInfo)
 
 data Command = Generate Generate.Options
 
 command :: ArgParser.ArgParser Command
 command = (Generate <$> Generate.options)
   <* ArgParser.flagHelp
-  <* ArgParser.flagInfo [ "--version", "-v" ] "Show the current version" version
+  <* ArgParser.flagInfo [ "--version", "-v" ] "Show the current version" versionInfo
 
 parse :: Array String -> Either ArgParser.ArgError Command
 parse = ArgParser.parseArgs
