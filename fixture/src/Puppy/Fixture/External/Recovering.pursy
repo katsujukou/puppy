@@ -1,9 +1,9 @@
 -- A grammar that says where a parse may carry on past an error.
 --
--- Nothing here recovers yet -- the runner that puts an `ERROR` on the stack is
--- still to come. What this fixture holds is the half that is settled: `ERROR`
--- is a terminal the grammar may name, it is numbered past the end of input,
--- the table says so, and none of that changes what an ordinary parse does.
+-- `ERROR` is a terminal the grammar may name, numbered past the end of input.
+-- Naming it gives each start symbol two more entry points, which put one on
+-- the stack where a parse fails and carry on from there; the two every grammar
+-- has still stop at the first error, exactly as they did.
 --
 -- The token type is one Puppy did not write, which is where the numbering has
 -- a trap in it: classifying a token the grammar never declared has to land

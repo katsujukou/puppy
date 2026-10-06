@@ -92,8 +92,9 @@ jobs:
       - name: Format check
         run: git ls-files '*.purs' ':(exclude)docs/**' | xargs purs-tidy check
 
-  # The PureScript grammar under example/ is a real grammar regression test: 641
-  # states, 396 productions and every `%shift` site the port needed. It is kept
+  # The PureScript grammar under example/ is a real grammar regression test:
+  # hundreds of states, every `%shift` site the port needed, and recovery
+  # points -- its README has the current figures. It is kept
   # out of the job above so that a change to it cannot hold up the packages
   # that ship, and run here so that it cannot quietly stop working either.
   stress:
