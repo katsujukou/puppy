@@ -17,6 +17,11 @@ import Data.Maybe (Maybe(..))
 import Data.Set as Set
 import Puppy.LR.Item (ItemSet, core, lookaheadsOf)
 
+-- | The largest core size whose pair count still fits in an `Int`:
+-- | `32768 * 65535` is just under the top of the range, and one more is over.
+widest :: Int
+widest = 65536
+
 -- | How many pairs of positions a core of this size makes the test look at.
 -- |
 -- | Quadratic, which is why the caller has to budget for it -- and why the
@@ -25,15 +30,10 @@ import Puppy.LR.Item (ItemSet, core, lookaheadsOf)
 -- | which would make the most expensive core in the grammar look like the
 -- | cheapest thing in the world.
 -- |
--- | So one factor is halved before the multiplication, and sizes past what even
--- | that can hold saturate. Saturating loses nothing: the only question ever
--- | asked here is whether the cost exceeds a budget, and past this size the
--- | answer cannot be no.
--- | The largest core size whose pair count still fits in an `Int`:
--- | `32768 * 65535` is just under the top of the range, and one more is over.
-widest :: Int
-widest = 65536
-
+-- | So one factor is halved before the multiplication, and sizes past `widest`
+-- | saturate. Saturating loses nothing: the only question ever asked here is
+-- | whether the cost exceeds a budget, and past that size the answer cannot be
+-- | no.
 comparisons :: Int -> Int
 comparisons n
   | n < 2 = 0

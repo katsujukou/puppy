@@ -54,8 +54,8 @@ import Data.List (List(..))
 import Data.List as List
 import Data.Maybe (Maybe(..))
 
--- | One entry of the LR action table, indexed by (state, terminal).
--- | One cell of the action table, as an `Int`.
+-- | One cell of the LR action table, indexed by (state, terminal), as an
+-- | `Int`.
 -- |
 -- | ```
 -- |   0        the token is an error here
@@ -299,19 +299,14 @@ resume waiting tok = case offer waiting tok of
   Accepted value -> Done value
   Rejected stopped -> Failed stopped.error
 
--- | Take one production's worth off both stacks, in one walk down each.
+-- | Take one production's worth off both stacks.
 -- |
--- | The arguments come off backwards -- the stack keeps the rightmost symbol
--- | at the head -- so consing each one onto a list as it comes off puts them
--- | back in the order the production was written, and that list becomes the
--- | array in one go. Doing it this way walks each stack once rather than three
--- | times, and builds one array rather than two.
+-- | The two short arities are answered without walking anything: nothing is
+-- | taken off for a production of none, and a production of one is handed what
+-- | is already at the head of the stack. Anything longer is `popped`.
 -- |
 -- | `Nothing` when a stack ran out, which is a broken table rather than
 -- | anything an input can do.
--- | Calls `popped`, after answering the two short arities without walking
--- | anything: nothing is taken off for a production of none, and a production
--- | of one is handed what is already at the head of the stack.
 fastest
   :: forall val
    . Int
@@ -324,6 +319,13 @@ fastest arity states values = case arity, states, values of
     Just { states: states', values: values', args: [ value ] }
   _, _, _ -> popped arity states values Nil
 
+-- | Take `left` values off both stacks, in one walk down each.
+-- |
+-- | The arguments come off backwards -- the stack keeps the rightmost symbol
+-- | at the head -- so consing each one onto a list as it comes off puts them
+-- | back in the order the production was written, and that list becomes the
+-- | array in one go. Doing it this way walks each stack once rather than three
+-- | times, and builds one array rather than two.
 popped
   :: forall val
    . Int
