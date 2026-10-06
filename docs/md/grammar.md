@@ -452,8 +452,8 @@ can be told about and a tree covering as much of the file as there is.
 
 ```plain
 decl:
-  | n = ident "::" t = type { Signature n t }
-  | e = ERROR SEMI          { Broken e }
+  | n = ident DCOLON t = type { Signature n t }
+  | e = ERROR SEMI            { Broken e }
 ```
 
 It is a terminal, and it is the only reserved name a rule may write. No lexer
