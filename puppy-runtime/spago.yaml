@@ -6,8 +6,7 @@ package:
     license: MIT
     location:
       githubOwner: katsujukou
-      githubRepo: puppy
-      subdir: puppy-runtime
+      githubRepo: purescript-puppy-runtime
   dependencies:
     - arrays: ">=7.3.0 <8.0.0"
     - either: ">=6.1.0 <7.0.0"
