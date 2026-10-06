@@ -90,21 +90,14 @@ The generated module is written against `Puppy.Runtime` and
 What your own code uses is on top — the lexer below wants `arrays`, `either`,
 `integers`, `maybe` and `strings`.
 
-> **Note** `puppy-runtime` is not in the PureScript registry yet. Until it is,
-> name it as an extra package pointing at the subdirectory it lives in:
+> **Note** To figure out which version of `puppy-runtime` is compatible with
+> the generated parser, run:
 >
-> ```yaml
-> workspace:
->   extraPackages:
->     puppy-runtime:
->       git: https://github.com/katsujukou/puppy.git
->       ref: v0.1.0
->       subdir: puppy-runtime
+> ```sh
+> ❯ npx puppy -v
+> Puppy v0.2.0 (built with purs 0.15.16)
+> Supported runtime: 0.2.0
 > ```
->
-> Pin `ref` to a tag rather than a branch, so that a build stays what it was.
-> When `puppy-runtime` reaches the registry this block comes out and nothing
-> else changes.
 
 ## A lexer
 

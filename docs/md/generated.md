@@ -273,10 +273,6 @@ depend on `arrays` or `tailrec` on behalf of a file its author did not write.
 It is a small package that does not depend on the generator: building and
 shipping a parser does not need Puppy installed.
 
-> **Note** `puppy-runtime` is not in the PureScript registry yet. Until it is,
-> name it as an extra package pointing at the subdirectory it lives in — see
-> [getting started](getting-started.md#generating).
-
 Anything your own code uses is on top of this. Pattern matching the `Either` a
 parser returns means depending on `either` — because your code says `Left`, not
 because the generated module does.

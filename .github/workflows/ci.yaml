@@ -32,6 +32,7 @@ jobs:
               - 'fixture/**'
               - 'spago.yaml'
               - 'spago.lock'
+              - 'package.json'
               - 'flake.nix'
               - 'flake.lock'
               - '.github/workflows/ci.yaml'
@@ -91,6 +92,9 @@ jobs:
 
       - name: Format check
         run: git ls-files '*.purs' ':(exclude)docs/**' | xargs purs-tidy check
+
+      - name: Check for publish
+        run: npm publish --dry-run --json
 
   # The PureScript grammar under example/ is a real grammar regression test:
   # hundreds of states, every `%shift` site the port needed, and recovery

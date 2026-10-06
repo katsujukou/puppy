@@ -24,19 +24,18 @@ module beside it. A single grammar can be named directly:
 puppy src/Foo/Parser.pursy -m Foo.Parser
 ```
 
-A generated module depends on `puppy-runtime` and nothing else of Puppy's. The
-generator is not needed to build or run what it produced.
+A generated parser depends on `puppy-runtime`, so you need to add it to your Spago dependencies:
 
-`puppy-runtime` is not in the PureScript registry yet, so for now name it as an
-extra package pointing at the subdirectory it lives in:
+```sh
+spago install puppy-runtime
+```
 
-```yaml
-workspace:
-  extraPackages:
-    puppy-runtime:
-      git: https://github.com/katsujukou/puppy.git
-      ref: v0.1.0
-      subdir: puppy-runtime
+To figure out which version of `puppy-runtime` is compatible with the generated parser, run:
+
+```sh
+❯ npx puppy -v
+Puppy v0.2.0 (built with purs 0.15.16)
+Supported runtime: 0.2.0
 ```
 
 [Read the documentation](https://katsujukou.github.io/puppy/) for the grammar

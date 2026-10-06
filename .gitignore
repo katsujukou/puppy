@@ -16,3 +16,5 @@ generated-docs/
 # Misc
 .claude-sessions
 **/.DS_Store
+.vscode
+dist

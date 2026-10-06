@@ -7,8 +7,7 @@
   "homepage": "https://katsujukou.github.io/puppy/",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/katsujukou/puppy.git",
-    "directory": "cli"
+    "url": "git+https://github.com/katsujukou/puppy.git"
   },
   "bugs": {
     "url": "https://github.com/katsujukou/puppy/issues"
@@ -19,19 +18,18 @@
   ],
   "type": "module",
   "bin": {
-    "puppy": "./index.js"
+    "puppy": "dist/index.js"
   },
   "files": [
-    "index.js",
-    "lib/"
+    "dist/"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "copy": "rm -rf ./dist && mkdir -p ./dist && cp ./cli/{README.md,index.js} ./dist && cp ./{package.json,LICENSE} ./dist/",
+    "copy": "rm -rf ./dist && mkdir -p ./dist && cp ./cli/index.js ./dist",
     "bundle": "spago build -p puppy-cli --pure --output output-cli && purs-backend-es bundle-module -p node -y -m Puppy.CLI.Main --corefn-dir output-cli --output-dir output-cli-es -t ./dist/lib/bundle.js",
-    "prepack": "npm run copy && npm run bundle",
+    "prepublishOnly": "npm run copy && npm run bundle",
     "version": "echo 'export const version = \"v'$npm_package_version'\";' > ./cli/src/Puppy/CLI/Version.js && git add package.json ./cli/src/Puppy/CLI/Version.js"
   }
 }
