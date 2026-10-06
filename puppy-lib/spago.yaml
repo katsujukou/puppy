@@ -16,8 +16,9 @@ package:
     main: Test.Puppy
     dependencies:
       - aff
-      - spec
       - datetime
       - effect
       - now
+      - partial
+      - spec
       - spec-node
