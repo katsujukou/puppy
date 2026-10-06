@@ -92,11 +92,16 @@ isReserved name = Array.elem name
 -- | A start symbol becomes a top-level function beside these, so one that
 -- | shares a name with `tableFor` redefines it, and one called `map` makes
 -- | every use of `map` in the generated code ambiguous.
+-- |
+-- | This list has to follow what `Puppy.Codegen` writes, and nothing makes it
+-- | do so but a test: `Test.Puppy.Codegen` generates modules and checks every
+-- | top-level name in them against this.
 takenByGeneratedCode :: String -> Boolean
 takenByGeneratedCode name =
   Array.elem name
     [ "actionAt"
-    , "actionRows"
+    , "actionTable"
+    , "actionWidth"
     , "fromResult"
     , "gotoAt"
     , "gotoRows"

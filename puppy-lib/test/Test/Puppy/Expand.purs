@@ -637,6 +637,23 @@ main: | x = loop { x }
       shouldFailWith "already uses"
         "%token A\n%start { X } tableFor\n%%\ntableFor: | A { 1 }\n"
 
+    -- The flat action table brought these two with it, and for a while
+    -- nothing refused them.
+    it "rejects a start symbol named after the action table" do
+      shouldFailWith "already uses"
+        "%token A\n%start { X } actionTable\n%%\nactionTable: | A { 1 }\n"
+      shouldFailWith "already uses"
+        "%token A\n%start { X } actionWidth\n%%\nactionWidth: | A { 1 }\n"
+
+    -- The other direction. The check in `Test.Puppy.Codegen` catches a name the
+    -- generator writes and this list misses; it cannot catch a name the list
+    -- keeps after the generator has stopped writing it, which refuses a start
+    -- symbol for nothing. `actionRows` is the one that was kept.
+    it "accepts a start symbol named after a table the generator no longer writes" do
+      productionsOf
+        "%token A\n%start { X } actionRows\n%%\nactionRows: | A { 1 }\n"
+        `shouldEqual` Right [ "actionRows -> A" ]
+
     -- Each start symbol produces two entry points, so two start symbols can
     -- want the same generated name without either being declared twice.
     it "rejects two start symbols whose entry points would collide" do

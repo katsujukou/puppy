@@ -5,6 +5,7 @@ import Prelude
 import Data.Array as Array
 import Data.Char (fromCharCode)
 import Data.Either (Either(..))
+import Data.Foldable (for_)
 import Data.Maybe (Maybe(..))
 import Data.String (Pattern(..), contains)
 import Data.String.CodeUnits as SCU
@@ -21,6 +22,7 @@ import Effect.Now (now)
 import Puppy.Codegen (Input, generate)
 import Puppy.Syntax as Syntax
 import Puppy.Codegen.Emit (SourceMapping)
+import Puppy.Names as Names
 import Puppy.Expand (expand)
 import Puppy.LR.Analysis (analyse)
 import Puppy.LR.Automaton (Policy(..), build)
@@ -162,6 +164,73 @@ total:
   | n = NAME                 { 0 }
   | a = total PLUS b = INT   { a + b }
 """
+
+-- | Grammars that between them make the generator write every helper it has:
+-- | a token type of its own and someone else's, a whole-token terminal, an
+-- | inlined action, and the recovering entry points `ERROR` brings with it.
+-- |
+-- | Each has one start symbol, `main`, so that its entry points are the four
+-- | names `topLevelNames` knows to leave out.
+reservingGrammars :: Array String
+reservingGrammars =
+  [ """
+%token PLUS
+%token { Int } INT
+
+%derive Eq Show
+
+%start { Int } main
+
+%%
+
+main:
+  | i = INT                    { i }
+  | a = main f = op b = INT    { f a b }
+  | ERROR                      { 0 }
+
+%inline op:
+  | PLUS { (+) }
+"""
+  , """
+%tokentype { T.Token }
+
+%token PLUS @ { T.Plus }
+%token { Int } INT { T.Int $$ }
+
+%start { Int } main
+
+%%
+
+main:
+  | i = INT                    { i }
+  | a = main PLUS b = INT      { a + b }
+  | e = ERROR                  { e.position }
+"""
+  ]
+
+-- | Every value a generated module defines at the top level, other than the
+-- | entry points of a start symbol called `main`.
+-- |
+-- | A definition, and a type signature, begins in the first column with the
+-- | name it defines; everything else the generator writes there is a keyword
+-- | or a comment.
+topLevelNames :: String -> Array String
+topLevelNames source = Array.nub (Array.mapMaybe defined (lines source))
+  where
+  defined l = case Array.head (split (P.Pattern " ") l) of
+    Just word
+      | startsLower word
+          && not (Array.elem word keywords)
+          && not (Array.elem word entryPoints) -> Just word
+    _ -> Nothing
+
+  startsLower word = case SCU.charAt 0 word of
+    Just c -> c >= 'a' && c <= 'z'
+    Nothing -> false
+
+  keywords = [ "module", "import", "data", "derive", "instance" ]
+
+  entryPoints = [ "main", "mainFrom", "mainRecovering", "mainRecoveringFrom" ]
 
 withGenerated
   :: (String -> Array SourceMapping -> Aff Unit) -> Aff Unit
@@ -348,6 +417,18 @@ spec = describe "Puppy.Codegen" do
         mentions out.source "\"two\\nlines\""
         when (contains (Pattern "\"two\nlines\"") out.source) do
           fail "a real newline was written into a string literal"
+
+  -- A start symbol becomes a top-level function, so it may not take a name the
+  -- module already defines -- and which names those are is a list written by
+  -- hand, in another module. Reading the names back out of what was generated
+  -- is what keeps the two in step.
+  it "reserves every top-level name the generated module defines" do
+    for_ reservingGrammars \source -> case generated source of
+      Left message -> fail ("failed to generate: " <> message)
+      Right out ->
+        Array.filter (not <<< Names.takenByGeneratedCode)
+          (topLevelNames out.source)
+          `shouldEqual` []
 
   it "refuses a module name that is not one" do
     case generatedIn "not a module" grammar of
