@@ -4,6 +4,8 @@
 -- what was faithful and what had to change.
 
 %{
+import Data.Array as Array
+import Data.List as List
 import Data.Maybe (Maybe(..))
 import Puppy.Purs.CST as C
 import PureScript.CST.Types as T
@@ -186,20 +188,35 @@ import PureScript.CST.Types as T
 
 --------------------------------------------------------------------------------
 -- The parameterised helpers `Parser.y` opens with. Puppy has no standard
--- library of these either, and they cost the same five lines.
+-- library of these either, so they are written out here, a few lines each.
+--
+-- A list is built back to front. Left recursion hands the items over in
+-- order, one reduction each, and `xs <> [ x ]` would copy everything read so
+-- far to add one more -- the square of the length, for a module's worth of
+-- declarations. Consing onto a `List` costs the same for the thousandth item
+-- as for the first, and `many` and `manySep` turn it round once at the end.
+--
+-- Those two are `%inline`, so turning round is a semantic action and not a
+-- reduction: the tables are the ones the grammar had when it appended.
 --------------------------------------------------------------------------------
 
-many(a):
-  | x = a                { [ x ] }
-  | xs = many(a) x = a   { xs <> [ x ] }
+manyReversed(a):
+  | x = a                        { List.singleton x }
+  | xs = manyReversed(a) x = a   { List.Cons x xs }
+
+%inline many(a):
+  | xs = manyReversed(a)   { Array.fromFoldable (List.reverse xs) }
 
 manyOrEmpty(a):
   |                      { [] }
   | xs = many(a)         { xs }
 
-manySep(a, s):
-  | x = a                       { [ x ] }
-  | xs = manySep(a, s) s x = a  { xs <> [ x ] }
+manySepReversed(a, s):
+  | x = a                                { List.singleton x }
+  | xs = manySepReversed(a, s) s x = a   { List.Cons x xs }
+
+%inline manySep(a, s):
+  | xs = manySepReversed(a, s)   { Array.fromFoldable (List.reverse xs) }
 
 manySepOrEmpty(a, s):
   |                             { [] }

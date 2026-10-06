@@ -29,6 +29,8 @@ import Prelude
 import Puppy.Runtime as Puppy.Runtime
 import Puppy.Runtime.Deps as Puppy.Deps
 
+import Data.Array as Array
+import Data.List as List
 import Data.Maybe (Maybe(..))
 import Puppy.Purs.CST as C
 import PureScript.CST.Types as T
@@ -300,9 +302,9 @@ productionTable =
   , { lhs: 2, arity: 1, name: "moduleName -> QUAL_UPPER" }
   , { lhs: 3, arity: 0, name: "exportList -> <empty>" }
   , { lhs: 3, arity: 3, name: "exportList -> LPAREN exports1 RPAREN" }
-  , { lhs: 5, arity: 1, name: "exports1 -> manySep(export,COMMA)" }
-  , { lhs: 6, arity: 1, name: "manySep(export,COMMA) -> export" }
-  , { lhs: 6, arity: 3, name: "manySep(export,COMMA) -> manySep(export,COMMA) COMMA export" }
+  , { lhs: 5, arity: 1, name: "exports1 -> manySepReversed(export,COMMA)" }
+  , { lhs: 6, arity: 1, name: "manySepReversed(export,COMMA) -> export" }
+  , { lhs: 6, arity: 3, name: "manySepReversed(export,COMMA) -> manySepReversed(export,COMMA) COMMA export" }
   , { lhs: 7, arity: 1, name: "export -> ident" }
   , { lhs: 7, arity: 1, name: "export -> symbol" }
   , { lhs: 7, arity: 1, name: "export -> properName" }
@@ -323,14 +325,14 @@ productionTable =
   , { lhs: 11, arity: 1, name: "dataMembers -> DOTDOT" }
   , { lhs: 11, arity: 2, name: "dataMembers -> LPAREN RPAREN" }
   , { lhs: 11, arity: 3, name: "dataMembers -> LPAREN properNames RPAREN" }
-  , { lhs: 12, arity: 1, name: "properNames -> manySep(properName,COMMA)" }
-  , { lhs: 13, arity: 1, name: "manySep(properName,COMMA) -> properName" }
-  , { lhs: 13, arity: 3, name: "manySep(properName,COMMA) -> manySep(properName,COMMA) COMMA properName" }
+  , { lhs: 12, arity: 1, name: "properNames -> manySepReversed(properName,COMMA)" }
+  , { lhs: 13, arity: 1, name: "manySepReversed(properName,COMMA) -> properName" }
+  , { lhs: 13, arity: 3, name: "manySepReversed(properName,COMMA) -> manySepReversed(properName,COMMA) COMMA properName" }
   , { lhs: 4, arity: 1, name: "moduleDecls -> manySepOrEmpty(moduleDecl,VSEP)" }
   , { lhs: 14, arity: 0, name: "manySepOrEmpty(moduleDecl,VSEP) -> <empty>" }
-  , { lhs: 14, arity: 1, name: "manySepOrEmpty(moduleDecl,VSEP) -> manySep(moduleDecl,VSEP)" }
-  , { lhs: 15, arity: 1, name: "manySep(moduleDecl,VSEP) -> moduleDecl" }
-  , { lhs: 15, arity: 3, name: "manySep(moduleDecl,VSEP) -> manySep(moduleDecl,VSEP) VSEP moduleDecl" }
+  , { lhs: 14, arity: 1, name: "manySepOrEmpty(moduleDecl,VSEP) -> manySepReversed(moduleDecl,VSEP)" }
+  , { lhs: 15, arity: 1, name: "manySepReversed(moduleDecl,VSEP) -> moduleDecl" }
+  , { lhs: 15, arity: 3, name: "manySepReversed(moduleDecl,VSEP) -> manySepReversed(moduleDecl,VSEP) VSEP moduleDecl" }
   , { lhs: 16, arity: 1, name: "moduleDecl -> importDecl" }
   , { lhs: 16, arity: 1, name: "moduleDecl -> decls1" }
   , { lhs: 16, arity: 1, name: "moduleDecl -> ERROR" }
@@ -338,9 +340,9 @@ productionTable =
   , { lhs: 19, arity: 0, name: "importList -> <empty>" }
   , { lhs: 19, arity: 3, name: "importList -> LPAREN imports1 RPAREN" }
   , { lhs: 19, arity: 4, name: "importList -> HIDING LPAREN imports1 RPAREN" }
-  , { lhs: 21, arity: 1, name: "imports1 -> manySep(import,COMMA)" }
-  , { lhs: 22, arity: 1, name: "manySep(import,COMMA) -> import" }
-  , { lhs: 22, arity: 3, name: "manySep(import,COMMA) -> manySep(import,COMMA) COMMA import" }
+  , { lhs: 21, arity: 1, name: "imports1 -> manySepReversed(import,COMMA)" }
+  , { lhs: 22, arity: 1, name: "manySepReversed(import,COMMA) -> import" }
+  , { lhs: 22, arity: 3, name: "manySepReversed(import,COMMA) -> manySepReversed(import,COMMA) COMMA import" }
   , { lhs: 23, arity: 1, name: "import -> ident" }
   , { lhs: 23, arity: 1, name: "import -> symbol" }
   , { lhs: 23, arity: 1, name: "import -> properName" }
@@ -375,9 +377,9 @@ productionTable =
   , { lhs: 25, arity: 3, name: "dataHead -> DATA properName typeVarBindings" }
   , { lhs: 39, arity: 1, name: "typeVarBindings -> manyOrEmpty(typeVarBinding)" }
   , { lhs: 40, arity: 0, name: "manyOrEmpty(typeVarBinding) -> <empty>" }
-  , { lhs: 40, arity: 1, name: "manyOrEmpty(typeVarBinding) -> many(typeVarBinding)" }
-  , { lhs: 41, arity: 1, name: "many(typeVarBinding) -> typeVarBinding" }
-  , { lhs: 41, arity: 2, name: "many(typeVarBinding) -> many(typeVarBinding) typeVarBinding" }
+  , { lhs: 40, arity: 1, name: "manyOrEmpty(typeVarBinding) -> manyReversed(typeVarBinding)" }
+  , { lhs: 41, arity: 1, name: "manyReversed(typeVarBinding) -> typeVarBinding" }
+  , { lhs: 41, arity: 2, name: "manyReversed(typeVarBinding) -> manyReversed(typeVarBinding) typeVarBinding" }
   , { lhs: 42, arity: 1, name: "typeVarBinding -> ident" }
   , { lhs: 42, arity: 5, name: "typeVarBinding -> LPAREN ident DCOLON type RPAREN" }
   , { lhs: 28, arity: 1, name: "type -> type1" }
@@ -415,9 +417,9 @@ productionTable =
   , { lhs: 53, arity: 2, name: "row -> rowLabels rowTail" }
   , { lhs: 55, arity: 0, name: "rowTail -> <empty>" }
   , { lhs: 55, arity: 2, name: "rowTail -> PIPE type" }
-  , { lhs: 56, arity: 1, name: "rowLabels -> manySep(rowLabel,COMMA)" }
-  , { lhs: 57, arity: 1, name: "manySep(rowLabel,COMMA) -> rowLabel" }
-  , { lhs: 57, arity: 3, name: "manySep(rowLabel,COMMA) -> manySep(rowLabel,COMMA) COMMA rowLabel" }
+  , { lhs: 56, arity: 1, name: "rowLabels -> manySepReversed(rowLabel,COMMA)" }
+  , { lhs: 57, arity: 1, name: "manySepReversed(rowLabel,COMMA) -> rowLabel" }
+  , { lhs: 57, arity: 3, name: "manySepReversed(rowLabel,COMMA) -> manySepReversed(rowLabel,COMMA) COMMA rowLabel" }
   , { lhs: 58, arity: 3, name: "rowLabel -> label DCOLON type" }
   , { lhs: 59, arity: 1, name: "label -> LOWER" }
   , { lhs: 59, arity: 1, name: "label -> LIT_STRING" }
@@ -468,16 +470,16 @@ productionTable =
   , { lhs: 48, arity: 1, name: "qualOp -> LFATARROWU" }
   , { lhs: 48, arity: 1, name: "qualOp -> MINUS" }
   , { lhs: 48, arity: 1, name: "qualOp -> COLON" }
-  , { lhs: 45, arity: 1, name: "typeVarBindings1 -> many(typeVarBinding)" }
-  , { lhs: 26, arity: 1, name: "dataCtors -> manySep(dataCtor,PIPE)" }
-  , { lhs: 60, arity: 1, name: "manySep(dataCtor,PIPE) -> dataCtor" }
-  , { lhs: 60, arity: 3, name: "manySep(dataCtor,PIPE) -> manySep(dataCtor,PIPE) PIPE dataCtor" }
+  , { lhs: 45, arity: 1, name: "typeVarBindings1 -> manyReversed(typeVarBinding)" }
+  , { lhs: 26, arity: 1, name: "dataCtors -> manySepReversed(dataCtor,PIPE)" }
+  , { lhs: 60, arity: 1, name: "manySepReversed(dataCtor,PIPE) -> dataCtor" }
+  , { lhs: 60, arity: 3, name: "manySepReversed(dataCtor,PIPE) -> manySepReversed(dataCtor,PIPE) PIPE dataCtor" }
   , { lhs: 61, arity: 2, name: "dataCtor -> properName typeAtoms" }
   , { lhs: 62, arity: 1, name: "typeAtoms -> manyOrEmpty(typeAtom)" }
   , { lhs: 63, arity: 0, name: "manyOrEmpty(typeAtom) -> <empty>" }
-  , { lhs: 63, arity: 1, name: "manyOrEmpty(typeAtom) -> many(typeAtom)" }
-  , { lhs: 64, arity: 1, name: "many(typeAtom) -> typeAtom" }
-  , { lhs: 64, arity: 2, name: "many(typeAtom) -> many(typeAtom) typeAtom" }
+  , { lhs: 63, arity: 1, name: "manyOrEmpty(typeAtom) -> manyReversed(typeAtom)" }
+  , { lhs: 64, arity: 1, name: "manyReversed(typeAtom) -> typeAtom" }
+  , { lhs: 64, arity: 2, name: "manyReversed(typeAtom) -> manyReversed(typeAtom) typeAtom" }
   , { lhs: 27, arity: 3, name: "typeHead -> TYPE properName typeVarBindings" }
   , { lhs: 29, arity: 3, name: "newtypeHead -> NEWTYPE properName typeVarBindings" }
   , { lhs: 31, arity: 4, name: "classHeadPrefix -> CLASS qualProperName typeAtoms fundeps" }
@@ -485,14 +487,14 @@ productionTable =
   , { lhs: 31, arity: 6, name: "classHeadPrefix -> CLASS constraints LFATARROWU qualProperName typeAtoms fundeps" }
   , { lhs: 65, arity: 0, name: "fundeps -> <empty>" }
   , { lhs: 65, arity: 2, name: "fundeps -> PIPE fundeps1" }
-  , { lhs: 67, arity: 1, name: "fundeps1 -> manySep(fundep,COMMA)" }
-  , { lhs: 68, arity: 1, name: "manySep(fundep,COMMA) -> fundep" }
-  , { lhs: 68, arity: 3, name: "manySep(fundep,COMMA) -> manySep(fundep,COMMA) COMMA fundep" }
+  , { lhs: 67, arity: 1, name: "fundeps1 -> manySepReversed(fundep,COMMA)" }
+  , { lhs: 68, arity: 1, name: "manySepReversed(fundep,COMMA) -> fundep" }
+  , { lhs: 68, arity: 3, name: "manySepReversed(fundep,COMMA) -> manySepReversed(fundep,COMMA) COMMA fundep" }
   , { lhs: 69, arity: 2, name: "fundep -> RARROW idents1" }
   , { lhs: 69, arity: 3, name: "fundep -> idents1 RARROW idents1" }
-  , { lhs: 70, arity: 1, name: "idents1 -> many(ident)" }
-  , { lhs: 71, arity: 1, name: "many(ident) -> ident" }
-  , { lhs: 71, arity: 2, name: "many(ident) -> many(ident) ident" }
+  , { lhs: 70, arity: 1, name: "idents1 -> manyReversed(ident)" }
+  , { lhs: 71, arity: 1, name: "manyReversed(ident) -> ident" }
+  , { lhs: 71, arity: 2, name: "manyReversed(ident) -> manyReversed(ident) ident" }
   , { lhs: 66, arity: 1, name: "constraints -> constraint" }
   , { lhs: 66, arity: 3, name: "constraints -> LPAREN constraintList RPAREN" }
   , { lhs: 72, arity: 2, name: "constraint -> qualProperName typeAtoms" }
@@ -500,25 +502,25 @@ productionTable =
   , { lhs: 73, arity: 1, name: "constraintList -> constraint" }
   , { lhs: 73, arity: 3, name: "constraintList -> constraintList COMMA constraint" }
   , { lhs: 32, arity: 1, name: "classMembers -> layout(classMember,VSEP)" }
-  , { lhs: 74, arity: 3, name: "layout(classMember,VSEP) -> VOPEN manySep(classMember,VSEP) VCLOSE" }
-  , { lhs: 75, arity: 1, name: "manySep(classMember,VSEP) -> classMember" }
-  , { lhs: 75, arity: 3, name: "manySep(classMember,VSEP) -> manySep(classMember,VSEP) VSEP classMember" }
+  , { lhs: 74, arity: 3, name: "layout(classMember,VSEP) -> VOPEN manySepReversed(classMember,VSEP) VCLOSE" }
+  , { lhs: 75, arity: 1, name: "manySepReversed(classMember,VSEP) -> classMember" }
+  , { lhs: 75, arity: 3, name: "manySepReversed(classMember,VSEP) -> manySepReversed(classMember,VSEP) VSEP classMember" }
   , { lhs: 76, arity: 3, name: "classMember -> ident DCOLON type" }
   , { lhs: 33, arity: 5, name: "instHead -> INSTANCE constraints RFATARROW qualProperName typeAtoms" }
   , { lhs: 33, arity: 3, name: "instHead -> INSTANCE qualProperName typeAtoms" }
   , { lhs: 33, arity: 7, name: "instHead -> INSTANCE ident DCOLON constraints RFATARROW qualProperName typeAtoms" }
   , { lhs: 33, arity: 5, name: "instHead -> INSTANCE ident DCOLON qualProperName typeAtoms" }
   , { lhs: 34, arity: 1, name: "instBindings -> layout(instBinding,VSEP)" }
-  , { lhs: 77, arity: 3, name: "layout(instBinding,VSEP) -> VOPEN manySep(instBinding,VSEP) VCLOSE" }
-  , { lhs: 78, arity: 1, name: "manySep(instBinding,VSEP) -> instBinding" }
-  , { lhs: 78, arity: 3, name: "manySep(instBinding,VSEP) -> manySep(instBinding,VSEP) VSEP instBinding" }
+  , { lhs: 77, arity: 3, name: "layout(instBinding,VSEP) -> VOPEN manySepReversed(instBinding,VSEP) VCLOSE" }
+  , { lhs: 78, arity: 1, name: "manySepReversed(instBinding,VSEP) -> instBinding" }
+  , { lhs: 78, arity: 3, name: "manySepReversed(instBinding,VSEP) -> manySepReversed(instBinding,VSEP) VSEP instBinding" }
   , { lhs: 79, arity: 3, name: "instBinding -> ident DCOLON type" }
   , { lhs: 79, arity: 3, name: "instBinding -> ident binderAtoms guardedDecl" }
   , { lhs: 35, arity: 1, name: "binderAtoms -> manyOrEmpty(binderAtom)" }
   , { lhs: 80, arity: 0, name: "manyOrEmpty(binderAtom) -> <empty>" }
-  , { lhs: 80, arity: 1, name: "manyOrEmpty(binderAtom) -> many(binderAtom)" }
-  , { lhs: 81, arity: 1, name: "many(binderAtom) -> binderAtom" }
-  , { lhs: 81, arity: 2, name: "many(binderAtom) -> many(binderAtom) binderAtom" }
+  , { lhs: 80, arity: 1, name: "manyOrEmpty(binderAtom) -> manyReversed(binderAtom)" }
+  , { lhs: 81, arity: 1, name: "manyReversed(binderAtom) -> binderAtom" }
+  , { lhs: 81, arity: 2, name: "manyReversed(binderAtom) -> manyReversed(binderAtom) binderAtom" }
   , { lhs: 82, arity: 1, name: "binderAtom -> UNDERSCORE" }
   , { lhs: 82, arity: 1, name: "binderAtom -> ident" }
   , { lhs: 82, arity: 3, name: "binderAtom -> ident AT binderAtom" }
@@ -534,9 +536,9 @@ productionTable =
   , { lhs: 82, arity: 1, name: "binderAtom -> delimited(LBRACE,recordBinder,COMMA,RBRACE)" }
   , { lhs: 82, arity: 3, name: "binderAtom -> LPAREN binder RPAREN" }
   , { lhs: 83, arity: 2, name: "delimited(LSQUARE,binder,COMMA,RSQUARE) -> LSQUARE RSQUARE" }
-  , { lhs: 83, arity: 3, name: "delimited(LSQUARE,binder,COMMA,RSQUARE) -> LSQUARE manySep(binder,COMMA) RSQUARE" }
-  , { lhs: 86, arity: 1, name: "manySep(binder,COMMA) -> binder" }
-  , { lhs: 86, arity: 3, name: "manySep(binder,COMMA) -> manySep(binder,COMMA) COMMA binder" }
+  , { lhs: 83, arity: 3, name: "delimited(LSQUARE,binder,COMMA,RSQUARE) -> LSQUARE manySepReversed(binder,COMMA) RSQUARE" }
+  , { lhs: 86, arity: 1, name: "manySepReversed(binder,COMMA) -> binder" }
+  , { lhs: 86, arity: 3, name: "manySepReversed(binder,COMMA) -> manySepReversed(binder,COMMA) COMMA binder" }
   , { lhs: 85, arity: 1, name: "binder -> binder1" }
   , { lhs: 85, arity: 3, name: "binder -> binder1 DCOLON type" }
   , { lhs: 87, arity: 1, name: "binder1 -> binder2" }
@@ -544,11 +546,11 @@ productionTable =
   , { lhs: 88, arity: 1, name: "binder2 -> binderAtoms1" }
   , { lhs: 88, arity: 2, name: "binder2 -> MINUS LIT_INT" }
   , { lhs: 88, arity: 2, name: "binder2 -> MINUS LIT_NUMBER" }
-  , { lhs: 89, arity: 1, name: "binderAtoms1 -> many(binderAtom)" }
+  , { lhs: 89, arity: 1, name: "binderAtoms1 -> manyReversed(binderAtom)" }
   , { lhs: 84, arity: 2, name: "delimited(LBRACE,recordBinder,COMMA,RBRACE) -> LBRACE RBRACE" }
-  , { lhs: 84, arity: 3, name: "delimited(LBRACE,recordBinder,COMMA,RBRACE) -> LBRACE manySep(recordBinder,COMMA) RBRACE" }
-  , { lhs: 90, arity: 1, name: "manySep(recordBinder,COMMA) -> recordBinder" }
-  , { lhs: 90, arity: 3, name: "manySep(recordBinder,COMMA) -> manySep(recordBinder,COMMA) COMMA recordBinder" }
+  , { lhs: 84, arity: 3, name: "delimited(LBRACE,recordBinder,COMMA,RBRACE) -> LBRACE manySepReversed(recordBinder,COMMA) RBRACE" }
+  , { lhs: 90, arity: 1, name: "manySepReversed(recordBinder,COMMA) -> recordBinder" }
+  , { lhs: 90, arity: 3, name: "manySepReversed(recordBinder,COMMA) -> manySepReversed(recordBinder,COMMA) COMMA recordBinder" }
   , { lhs: 91, arity: 1, name: "recordBinder -> label" }
   , { lhs: 91, arity: 3, name: "recordBinder -> label COLON binder" }
   , { lhs: 91, arity: 3, name: "recordBinder -> label EQUALS binder" }
@@ -605,72 +607,72 @@ productionTable =
   , { lhs: 111, arity: 1, name: "qualIdent -> REPRESENTATIONAL" }
   , { lhs: 111, arity: 1, name: "qualIdent -> PHANTOM" }
   , { lhs: 112, arity: 2, name: "delimited(LSQUARE,expr,COMMA,RSQUARE) -> LSQUARE RSQUARE" }
-  , { lhs: 112, arity: 3, name: "delimited(LSQUARE,expr,COMMA,RSQUARE) -> LSQUARE manySep(expr,COMMA) RSQUARE" }
-  , { lhs: 114, arity: 1, name: "manySep(expr,COMMA) -> expr" }
-  , { lhs: 114, arity: 3, name: "manySep(expr,COMMA) -> manySep(expr,COMMA) COMMA expr" }
+  , { lhs: 112, arity: 3, name: "delimited(LSQUARE,expr,COMMA,RSQUARE) -> LSQUARE manySepReversed(expr,COMMA) RSQUARE" }
+  , { lhs: 114, arity: 1, name: "manySepReversed(expr,COMMA) -> expr" }
+  , { lhs: 114, arity: 3, name: "manySepReversed(expr,COMMA) -> manySepReversed(expr,COMMA) COMMA expr" }
   , { lhs: 113, arity: 2, name: "delimited(LBRACE,recordLabel,COMMA,RBRACE) -> LBRACE RBRACE" }
-  , { lhs: 113, arity: 3, name: "delimited(LBRACE,recordLabel,COMMA,RBRACE) -> LBRACE manySep(recordLabel,COMMA) RBRACE" }
-  , { lhs: 115, arity: 1, name: "manySep(recordLabel,COMMA) -> recordLabel" }
-  , { lhs: 115, arity: 3, name: "manySep(recordLabel,COMMA) -> manySep(recordLabel,COMMA) COMMA recordLabel" }
+  , { lhs: 113, arity: 3, name: "delimited(LBRACE,recordLabel,COMMA,RBRACE) -> LBRACE manySepReversed(recordLabel,COMMA) RBRACE" }
+  , { lhs: 115, arity: 1, name: "manySepReversed(recordLabel,COMMA) -> recordLabel" }
+  , { lhs: 115, arity: 3, name: "manySepReversed(recordLabel,COMMA) -> manySepReversed(recordLabel,COMMA) COMMA recordLabel" }
   , { lhs: 116, arity: 1, name: "recordLabel -> label" }
   , { lhs: 116, arity: 3, name: "recordLabel -> label COLON expr" }
   , { lhs: 116, arity: 3, name: "recordLabel -> label EQUALS expr" }
-  , { lhs: 110, arity: 1, name: "labels1 -> manySep(label,DOT)" }
-  , { lhs: 117, arity: 1, name: "manySep(label,DOT) -> label" }
-  , { lhs: 117, arity: 3, name: "manySep(label,DOT) -> manySep(label,DOT) DOT label" }
-  , { lhs: 108, arity: 1, name: "recordUpdateOrLabels -> manySep(recordUpdateOrLabel,COMMA)" }
-  , { lhs: 118, arity: 1, name: "manySep(recordUpdateOrLabel,COMMA) -> recordUpdateOrLabel" }
-  , { lhs: 118, arity: 3, name: "manySep(recordUpdateOrLabel,COMMA) -> manySep(recordUpdateOrLabel,COMMA) COMMA recordUpdateOrLabel" }
+  , { lhs: 110, arity: 1, name: "labels1 -> manySepReversed(label,DOT)" }
+  , { lhs: 117, arity: 1, name: "manySepReversed(label,DOT) -> label" }
+  , { lhs: 117, arity: 3, name: "manySepReversed(label,DOT) -> manySepReversed(label,DOT) DOT label" }
+  , { lhs: 108, arity: 1, name: "recordUpdateOrLabels -> manySepReversed(recordUpdateOrLabel,COMMA)" }
+  , { lhs: 118, arity: 1, name: "manySepReversed(recordUpdateOrLabel,COMMA) -> recordUpdateOrLabel" }
+  , { lhs: 118, arity: 3, name: "manySepReversed(recordUpdateOrLabel,COMMA) -> manySepReversed(recordUpdateOrLabel,COMMA) COMMA recordUpdateOrLabel" }
   , { lhs: 119, arity: 3, name: "recordUpdateOrLabel -> label COLON expr" }
   , { lhs: 119, arity: 1, name: "recordUpdateOrLabel -> label" }
   , { lhs: 119, arity: 3, name: "recordUpdateOrLabel -> label EQUALS expr" }
   , { lhs: 119, arity: 4, name: "recordUpdateOrLabel -> label LBRACE recordUpdates RBRACE" }
-  , { lhs: 120, arity: 1, name: "recordUpdates -> manySep(recordUpdate,COMMA)" }
-  , { lhs: 121, arity: 1, name: "manySep(recordUpdate,COMMA) -> recordUpdate" }
-  , { lhs: 121, arity: 3, name: "manySep(recordUpdate,COMMA) -> manySep(recordUpdate,COMMA) COMMA recordUpdate" }
+  , { lhs: 120, arity: 1, name: "recordUpdates -> manySepReversed(recordUpdate,COMMA)" }
+  , { lhs: 121, arity: 1, name: "manySepReversed(recordUpdate,COMMA) -> recordUpdate" }
+  , { lhs: 121, arity: 3, name: "manySepReversed(recordUpdate,COMMA) -> manySepReversed(recordUpdate,COMMA) COMMA recordUpdate" }
   , { lhs: 122, arity: 3, name: "recordUpdate -> label EQUALS expr" }
   , { lhs: 122, arity: 4, name: "recordUpdate -> label LBRACE recordUpdates RBRACE" }
   , { lhs: 104, arity: 1, name: "doStatements -> layout(doStatement,VSEP)" }
-  , { lhs: 123, arity: 3, name: "layout(doStatement,VSEP) -> VOPEN manySep(doStatement,VSEP) VCLOSE" }
-  , { lhs: 124, arity: 1, name: "manySep(doStatement,VSEP) -> doStatement" }
-  , { lhs: 124, arity: 3, name: "manySep(doStatement,VSEP) -> manySep(doStatement,VSEP) VSEP doStatement" }
+  , { lhs: 123, arity: 3, name: "layout(doStatement,VSEP) -> VOPEN manySepReversed(doStatement,VSEP) VCLOSE" }
+  , { lhs: 124, arity: 1, name: "manySepReversed(doStatement,VSEP) -> doStatement" }
+  , { lhs: 124, arity: 3, name: "manySepReversed(doStatement,VSEP) -> manySepReversed(doStatement,VSEP) VSEP doStatement" }
   , { lhs: 125, arity: 1, name: "doStatement -> ERROR" }
   , { lhs: 125, arity: 2, name: "doStatement -> LET letBindings" }
   , { lhs: 125, arity: 1, name: "doStatement -> expr" }
   , { lhs: 125, arity: 3, name: "doStatement -> expr LARROW expr" }
   , { lhs: 95, arity: 1, name: "letBindings -> layout(letBinding,VSEP)" }
-  , { lhs: 126, arity: 3, name: "layout(letBinding,VSEP) -> VOPEN manySep(letBinding,VSEP) VCLOSE" }
-  , { lhs: 127, arity: 1, name: "manySep(letBinding,VSEP) -> letBinding" }
-  , { lhs: 127, arity: 3, name: "manySep(letBinding,VSEP) -> manySep(letBinding,VSEP) VSEP letBinding" }
+  , { lhs: 126, arity: 3, name: "layout(letBinding,VSEP) -> VOPEN manySepReversed(letBinding,VSEP) VCLOSE" }
+  , { lhs: 127, arity: 1, name: "manySepReversed(letBinding,VSEP) -> letBinding" }
+  , { lhs: 127, arity: 3, name: "manySepReversed(letBinding,VSEP) -> manySepReversed(letBinding,VSEP) VSEP letBinding" }
   , { lhs: 128, arity: 1, name: "letBinding -> ERROR" }
   , { lhs: 128, arity: 3, name: "letBinding -> ident DCOLON type" }
   , { lhs: 128, arity: 2, name: "letBinding -> binder1 guardedDecl" }
-  , { lhs: 105, arity: 1, name: "exprs1 -> manySep(expr,COMMA)" }
+  , { lhs: 105, arity: 1, name: "exprs1 -> manySepReversed(expr,COMMA)" }
   , { lhs: 106, arity: 1, name: "caseBranches -> layout(caseBranch,VSEP)" }
-  , { lhs: 129, arity: 3, name: "layout(caseBranch,VSEP) -> VOPEN manySep(caseBranch,VSEP) VCLOSE" }
-  , { lhs: 130, arity: 1, name: "manySep(caseBranch,VSEP) -> caseBranch" }
-  , { lhs: 130, arity: 3, name: "manySep(caseBranch,VSEP) -> manySep(caseBranch,VSEP) VSEP caseBranch" }
+  , { lhs: 129, arity: 3, name: "layout(caseBranch,VSEP) -> VOPEN manySepReversed(caseBranch,VSEP) VCLOSE" }
+  , { lhs: 130, arity: 1, name: "manySepReversed(caseBranch,VSEP) -> caseBranch" }
+  , { lhs: 130, arity: 3, name: "manySepReversed(caseBranch,VSEP) -> manySepReversed(caseBranch,VSEP) VSEP caseBranch" }
   , { lhs: 131, arity: 2, name: "caseBranch -> binders1 guardedCase" }
-  , { lhs: 132, arity: 1, name: "binders1 -> manySep(binder1,COMMA)" }
-  , { lhs: 134, arity: 1, name: "manySep(binder1,COMMA) -> binder1" }
-  , { lhs: 134, arity: 3, name: "manySep(binder1,COMMA) -> manySep(binder1,COMMA) COMMA binder1" }
+  , { lhs: 132, arity: 1, name: "binders1 -> manySepReversed(binder1,COMMA)" }
+  , { lhs: 134, arity: 1, name: "manySepReversed(binder1,COMMA) -> binder1" }
+  , { lhs: 134, arity: 3, name: "manySepReversed(binder1,COMMA) -> manySepReversed(binder1,COMMA) COMMA binder1" }
   , { lhs: 133, arity: 2, name: "guardedCase -> RARROW exprWhere" }
   , { lhs: 133, arity: 1, name: "guardedCase -> guardedCaseExprs" }
-  , { lhs: 135, arity: 1, name: "guardedCaseExprs -> many(guardedCaseExpr)" }
-  , { lhs: 136, arity: 1, name: "many(guardedCaseExpr) -> guardedCaseExpr" }
-  , { lhs: 136, arity: 2, name: "many(guardedCaseExpr) -> many(guardedCaseExpr) guardedCaseExpr" }
+  , { lhs: 135, arity: 1, name: "guardedCaseExprs -> manyReversed(guardedCaseExpr)" }
+  , { lhs: 136, arity: 1, name: "manyReversed(guardedCaseExpr) -> guardedCaseExpr" }
+  , { lhs: 136, arity: 2, name: "manyReversed(guardedCaseExpr) -> manyReversed(guardedCaseExpr) guardedCaseExpr" }
   , { lhs: 137, arity: 3, name: "guardedCaseExpr -> guard RARROW exprWhere" }
   , { lhs: 138, arity: 2, name: "guard -> PIPE patternGuards" }
-  , { lhs: 139, arity: 1, name: "patternGuards -> manySep(patternGuard,COMMA)" }
-  , { lhs: 140, arity: 1, name: "manySep(patternGuard,COMMA) -> patternGuard" }
-  , { lhs: 140, arity: 3, name: "manySep(patternGuard,COMMA) -> manySep(patternGuard,COMMA) COMMA patternGuard" }
+  , { lhs: 139, arity: 1, name: "patternGuards -> manySepReversed(patternGuard,COMMA)" }
+  , { lhs: 140, arity: 1, name: "manySepReversed(patternGuard,COMMA) -> patternGuard" }
+  , { lhs: 140, arity: 3, name: "manySepReversed(patternGuard,COMMA) -> manySepReversed(patternGuard,COMMA) COMMA patternGuard" }
   , { lhs: 141, arity: 1, name: "patternGuard -> expr1" }
   , { lhs: 141, arity: 3, name: "patternGuard -> expr1 LARROW expr1" }
   , { lhs: 100, arity: 1, name: "exprBacktick -> expr3" }
   , { lhs: 100, arity: 3, name: "exprBacktick -> exprBacktick qualOp expr3" }
-  , { lhs: 93, arity: 1, name: "guardedDeclExprs -> many(guardedDeclExpr)" }
-  , { lhs: 142, arity: 1, name: "many(guardedDeclExpr) -> guardedDeclExpr" }
-  , { lhs: 142, arity: 2, name: "many(guardedDeclExpr) -> many(guardedDeclExpr) guardedDeclExpr" }
+  , { lhs: 93, arity: 1, name: "guardedDeclExprs -> manyReversed(guardedDeclExpr)" }
+  , { lhs: 142, arity: 1, name: "manyReversed(guardedDeclExpr) -> guardedDeclExpr" }
+  , { lhs: 142, arity: 2, name: "manyReversed(guardedDeclExpr) -> manyReversed(guardedDeclExpr) guardedDeclExpr" }
   , { lhs: 143, arity: 3, name: "guardedDeclExpr -> guard EQUALS exprWhere" }
   , { lhs: 37, arity: 5, name: "fixity -> infix LIT_INT qualIdent AS op" }
   , { lhs: 37, arity: 5, name: "fixity -> infix LIT_INT qualProperName AS op" }
@@ -683,9 +685,9 @@ productionTable =
   , { lhs: 145, arity: 1, name: "op -> LFATARROWU" }
   , { lhs: 145, arity: 1, name: "op -> MINUS" }
   , { lhs: 145, arity: 1, name: "op -> COLON" }
-  , { lhs: 38, arity: 1, name: "roles1 -> many(role)" }
-  , { lhs: 146, arity: 1, name: "many(role) -> role" }
-  , { lhs: 146, arity: 2, name: "many(role) -> many(role) role" }
+  , { lhs: 38, arity: 1, name: "roles1 -> manyReversed(role)" }
+  , { lhs: 146, arity: 1, name: "manyReversed(role) -> role" }
+  , { lhs: 146, arity: 2, name: "manyReversed(role) -> manyReversed(role) role" }
   , { lhs: 147, arity: 1, name: "role -> NOMINAL" }
   , { lhs: 147, arity: 1, name: "role -> REPRESENTATIONAL" }
   , { lhs: 147, arity: 1, name: "role -> PHANTOM" }
@@ -752,7 +754,7 @@ semanticActionTable =
           ((Just es) :: Maybe (Array C.Export))
   , \puppyValues ->
       let
-        es = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        es = Puppy.Runtime.unbox (puppyInline6_0 puppyValues)
       in
         Puppy.Runtime.box
           ((es) :: Array C.Export)
@@ -762,7 +764,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -771,7 +773,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         n :: C.Name
@@ -909,7 +911,7 @@ semanticActionTable =
           ((C.DataEnumerated ns) :: C.DataMembers)
   , \puppyValues ->
       let
-        ns = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        ns = Puppy.Runtime.unbox (puppyInline29_0 puppyValues)
       in
         Puppy.Runtime.box
           ((ns) :: Array C.Name)
@@ -919,7 +921,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -928,7 +930,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         ds = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -940,7 +942,7 @@ semanticActionTable =
         ([])
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline34_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -950,7 +952,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -959,7 +961,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         i :: C.ImportDecl
@@ -1013,7 +1015,7 @@ semanticActionTable =
           ((C.ImportHiding is) :: C.ImportList)
   , \puppyValues ->
       let
-        is = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        is = Puppy.Runtime.unbox (puppyInline44_0 puppyValues)
       in
         Puppy.Runtime.box
           ((is) :: Array C.Import)
@@ -1023,7 +1025,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -1032,7 +1034,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         n :: C.Name
@@ -1324,7 +1326,7 @@ semanticActionTable =
         ([])
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline81_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -1334,7 +1336,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -1343,7 +1345,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         n :: C.Name
@@ -1623,7 +1625,7 @@ semanticActionTable =
           ((Just t) :: Maybe C.Type)
   , \puppyValues ->
       let
-        ls = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        ls = Puppy.Runtime.unbox (puppyInline121_0 puppyValues)
       in
         Puppy.Runtime.box
           ((ls) :: Array C.RowLabel)
@@ -1633,7 +1635,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -1642,7 +1644,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         l :: C.Name
@@ -1997,13 +1999,13 @@ semanticActionTable =
           ((C.qualOperator t) :: C.Qual)
   , \puppyValues ->
       let
-        vs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        vs = Puppy.Runtime.unbox (puppyInline174_0 puppyValues)
       in
         Puppy.Runtime.box
           ((vs) :: Array C.TypeVarBinding)
   , \puppyValues ->
       let
-        cs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        cs = Puppy.Runtime.unbox (puppyInline175_0 puppyValues)
       in
         Puppy.Runtime.box
           ((cs) :: Array C.DataCtor)
@@ -2013,7 +2015,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -2022,7 +2024,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         n :: C.Name
@@ -2044,7 +2046,7 @@ semanticActionTable =
         ([])
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline181_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -2054,7 +2056,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -2063,7 +2065,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         n :: C.Name
@@ -2141,7 +2143,7 @@ semanticActionTable =
           ((Just fs) :: Maybe (Array C.Fundep))
   , \puppyValues ->
       let
-        fs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        fs = Puppy.Runtime.unbox (puppyInline191_0 puppyValues)
       in
         Puppy.Runtime.box
           ((fs) :: Array C.Fundep)
@@ -2151,7 +2153,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -2160,7 +2162,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         ns :: Array C.Name
@@ -2180,7 +2182,7 @@ semanticActionTable =
           ((C.FundepDetermines as bs) :: C.Fundep)
   , \puppyValues ->
       let
-        ns = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        ns = Puppy.Runtime.unbox (puppyInline196_0 puppyValues)
       in
         Puppy.Runtime.box
           ((ns) :: Array C.Name)
@@ -2190,7 +2192,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -2199,7 +2201,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         c :: C.Constraint
@@ -2256,7 +2258,7 @@ semanticActionTable =
           ((ms) :: Array C.Labeled)
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline206_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -2266,7 +2268,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -2275,7 +2277,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         n :: C.Name
@@ -2346,7 +2348,7 @@ semanticActionTable =
           ((bs) :: Array C.InstanceBinding)
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline215_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -2356,7 +2358,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -2365,7 +2367,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         n :: C.Name
@@ -2400,7 +2402,7 @@ semanticActionTable =
         ([])
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline222_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -2410,7 +2412,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -2419,7 +2421,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \_ ->
       Puppy.Runtime.box
         ((C.BinderWildcard) :: C.Binder)
@@ -2512,7 +2514,7 @@ semanticActionTable =
         ([])
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline240_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -2522,7 +2524,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -2531,7 +2533,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         b :: C.Binder
@@ -2592,7 +2594,7 @@ semanticActionTable =
           ((C.BinderNumber (negate (C.numberValue d))) :: C.Binder)
   , \puppyValues ->
       let
-        bs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        bs = Puppy.Runtime.unbox (puppyInline250_0 puppyValues)
       in
         Puppy.Runtime.box
           ((bs) :: Array C.Binder)
@@ -2601,7 +2603,7 @@ semanticActionTable =
         ([])
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline252_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -2611,7 +2613,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -2620,7 +2622,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         l :: C.Name
@@ -3051,7 +3053,7 @@ semanticActionTable =
         ([])
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline311_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -3061,7 +3063,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3070,13 +3072,13 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \_ ->
       Puppy.Runtime.box
         ([])
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline315_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -3086,7 +3088,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3095,7 +3097,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         l :: C.Name
@@ -3125,7 +3127,7 @@ semanticActionTable =
           ((C.recordUpdateInCtr l e) :: C.RecordLabeled C.Expr)
   , \puppyValues ->
       let
-        ls = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        ls = Puppy.Runtime.unbox (puppyInline321_0 puppyValues)
       in
         Puppy.Runtime.box
           ((ls) :: Array C.Name)
@@ -3135,7 +3137,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3144,10 +3146,10 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
-        us = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        us = Puppy.Runtime.unbox (puppyInline324_0 puppyValues)
       in
         Puppy.Runtime.box
           ((us) :: Array C.RecordUpdateOrLabel)
@@ -3157,7 +3159,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3166,7 +3168,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         l :: C.Name
@@ -3206,7 +3208,7 @@ semanticActionTable =
           ((C.UpdateOrLabelBranch l us) :: C.RecordUpdateOrLabel)
   , \puppyValues ->
       let
-        us = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        us = Puppy.Runtime.unbox (puppyInline331_0 puppyValues)
       in
         Puppy.Runtime.box
           ((us) :: Array C.RecordUpdate)
@@ -3216,7 +3218,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3225,7 +3227,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         l :: C.Name
@@ -3254,7 +3256,7 @@ semanticActionTable =
           ((ss) :: Array C.DoStatement)
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline337_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -3264,7 +3266,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3273,7 +3275,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         e :: Puppy.Runtime.ParseError (T.SourceToken)
@@ -3313,7 +3315,7 @@ semanticActionTable =
           ((bs) :: Array C.LetBinding)
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline345_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -3323,7 +3325,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3332,7 +3334,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         e :: Puppy.Runtime.ParseError (T.SourceToken)
@@ -3362,7 +3364,7 @@ semanticActionTable =
           ((C.letBinding b g) :: C.LetBinding)
   , \puppyValues ->
       let
-        es = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        es = Puppy.Runtime.unbox (puppyInline351_0 puppyValues)
       in
         Puppy.Runtime.box
           ((es) :: Array C.Expr)
@@ -3374,7 +3376,7 @@ semanticActionTable =
           ((bs) :: Array C.CaseBranch)
   , \puppyValues ->
       let
-        xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+        xs = Puppy.Runtime.unbox (puppyInline353_0 puppyValues)
       in
         Puppy.Runtime.box
           (xs)
@@ -3384,7 +3386,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3393,7 +3395,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         bs :: Array C.Binder
@@ -3406,7 +3408,7 @@ semanticActionTable =
           ((C.CaseBranch bs g) :: C.CaseBranch)
   , \puppyValues ->
       let
-        bs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        bs = Puppy.Runtime.unbox (puppyInline357_0 puppyValues)
       in
         Puppy.Runtime.box
           ((bs) :: Array C.Binder)
@@ -3416,7 +3418,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3425,7 +3427,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         e :: C.Where
@@ -3442,7 +3444,7 @@ semanticActionTable =
           ((C.Guarded gs) :: C.Guarded)
   , \puppyValues ->
       let
-        gs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        gs = Puppy.Runtime.unbox (puppyInline362_0 puppyValues)
       in
         Puppy.Runtime.box
           ((gs) :: Array C.GuardedExpr)
@@ -3452,7 +3454,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3461,7 +3463,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         g :: Array C.PatternGuard
@@ -3481,7 +3483,7 @@ semanticActionTable =
           ((gs) :: Array C.PatternGuard)
   , \puppyValues ->
       let
-        gs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        gs = Puppy.Runtime.unbox (puppyInline367_0 puppyValues)
       in
         Puppy.Runtime.box
           ((gs) :: Array C.PatternGuard)
@@ -3491,7 +3493,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3500,7 +3502,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 2 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         e :: C.Expr
@@ -3540,7 +3542,7 @@ semanticActionTable =
           ((C.ExprOp a o b) :: C.Expr)
   , \puppyValues ->
       let
-        gs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        gs = Puppy.Runtime.unbox (puppyInline374_0 puppyValues)
       in
         Puppy.Runtime.box
           ((gs) :: Array C.GuardedExpr)
@@ -3550,7 +3552,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3559,7 +3561,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \puppyValues ->
       let
         g :: Array C.PatternGuard
@@ -3664,7 +3666,7 @@ semanticActionTable =
           ((C.operator t) :: C.Name)
   , \puppyValues ->
       let
-        rs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+        rs = Puppy.Runtime.unbox (puppyInline389_0 puppyValues)
       in
         Puppy.Runtime.box
           ((rs) :: Array C.Role)
@@ -3674,7 +3676,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
       in
         Puppy.Runtime.box
-          ([ x ])
+          (List.singleton x)
   , \puppyValues ->
       let
         xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
@@ -3683,7 +3685,7 @@ semanticActionTable =
         x = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
       in
         Puppy.Runtime.box
-          (xs <> [ x ])
+          (List.Cons x xs)
   , \_ ->
       Puppy.Runtime.box
         ((C.RoleNominal) :: C.Role)
@@ -3729,6 +3731,254 @@ semanticActionAt puppyIndex = case Puppy.Deps.index semanticActionTable puppyInd
   Puppy.Deps.Just puppyFound -> puppyFound
   Puppy.Deps.Nothing -> Puppy.Runtime.internalError
     ("no semantic action " <> show puppyIndex)
+
+puppyInline6_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline6_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline29_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline29_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline34_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline34_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline44_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline44_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline81_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline81_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline121_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline121_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline174_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline174_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline175_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline175_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline181_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline181_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline191_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline191_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline196_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline196_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline206_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline206_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline215_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline215_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline222_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline222_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline240_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline240_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline250_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline250_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline252_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline252_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline311_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline311_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline315_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline315_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline321_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline321_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline324_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline324_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline331_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline331_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline337_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline337_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline345_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline345_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline351_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline351_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline353_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline353_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 1 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline357_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline357_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline362_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline362_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline367_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline367_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline374_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline374_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
+
+puppyInline389_0 :: Array Puppy.Runtime.Value -> Puppy.Runtime.Value
+puppyInline389_0 puppyValues =
+  let
+    xs = Puppy.Runtime.unbox (Puppy.Runtime.slot 0 puppyValues)
+  in
+    Puppy.Runtime.box
+      (Array.fromFoldable (List.reverse xs))
 
 actionTable :: Array Int
 actionTable =

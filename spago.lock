@@ -74,6 +74,7 @@
             "arrays",
             "either",
             "language-cst-parser",
+            "lists",
             "maybe",
             "prelude",
             "puppy-runtime",

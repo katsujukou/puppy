@@ -31,8 +31,8 @@ spago run -p puppy-cli -- example/purescript/src/Puppy/Purs/Parser.pursy \
 | | |
 | --- | ---: |
 | `Parser.y` | 811 lines |
-| `Parser.pursy` | 836 lines |
-| Generated module | 487 KB |
+| `Parser.pursy` | 856 lines |
+| Generated module | 496 KB |
 | LR states | 650 |
 | Terminals / productions | 76 / 402 |
 | Time to generate | ~2s |
@@ -287,9 +287,11 @@ would.
   / and seeing )` — rather than a state number. On 70 conflicts across 650
   states that is the difference between a report and a wall.
 - **Parameterised rules carried the weight.** `many`, `manySep`, `delimited`
-  and `layout` are the whole of the boilerplate, the same five-line helpers
-  `Parser.y` opens with.
-- **The generated module compiles clean.** 4,859 lines, no warnings, under
+  and `layout` are the whole of the boilerplate, the same small helpers
+  `Parser.y` opens with. The two list-builders each gain a reversed inner rule,
+  so that a list is built by consing and turned round once rather than copied
+  on every item.
+- **The generated module compiles clean.** 54,222 lines, no warnings, under
   `--strict`-shaped settings.
 - **It is fast.** About two seconds from grammar to module for 650 states, run
   straight through `node`.
