@@ -1,7 +1,7 @@
 {
   "name": "purs-puppy",
   "description": "An LR parser generator for PureScript",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "author": "katsujukou",
   "homepage": "https://katsujukou.github.io/puppy/",
@@ -29,8 +29,9 @@
     "node": ">=22"
   },
   "scripts": {
-    "bundle": "cd .. && spago build -p puppy-cli --pure && purs-backend-es bundle-module -p node -m Puppy.CLI.Main -t cli/lib/bundle.js",
-    "prepack": "npm run bundle",
-    "version": "echo 'export const version = \"v'$npm_package_version'\";' > ./src/Puppy/CLI/Version.js && git add package.json ./src/Puppy/CLI/Version.js"
+    "copy": "rm -rf ./dist && mkdir -p ./dist && cp ./cli/{README.md,index.js} ./dist && cp ./{package.json,LICENSE} ./dist/",
+    "bundle": "spago build -p puppy-cli --pure --output output-cli && purs-backend-es bundle-module -p node -y -m Puppy.CLI.Main --corefn-dir output-cli --output-dir output-cli-es -t ./dist/lib/bundle.js",
+    "prepack": "npm run copy && npm run bundle",
+    "version": "echo 'export const version = \"v'$npm_package_version'\";' > ./cli/src/Puppy/CLI/Version.js && git add package.json ./cli/src/Puppy/CLI/Version.js"
   }
 }
