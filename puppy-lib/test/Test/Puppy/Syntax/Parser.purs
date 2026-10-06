@@ -381,6 +381,13 @@ spec = describe "Puppy.Syntax.Parser" do
     it "cannot be used as a rule name" do
       shouldRejectWith "reserved" "%token X\n%%\nEOF: | X { 1 }\n"
 
+    -- It once said a generated wrapper appended an `EOF` token to the input,
+    -- which stopped being true when end of input became `Nothing`. Whoever
+    -- reads this is being told why they cannot write it, so it has to be why.
+    it "says that end of input is not a token" do
+      shouldRejectWith "end of input is not a token"
+        "%token EOF\n%%\nmain: | X { 1 }\n"
+
   describe "malformed input" do
     it "requires a semantic action on every production" do
       shouldRejectWith "semantic action" "%token X\n%%\nmain: | X\n"

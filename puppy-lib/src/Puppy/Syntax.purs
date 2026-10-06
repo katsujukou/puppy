@@ -287,11 +287,13 @@ type Grammar =
 
 -- | The end-of-input terminal.
 -- |
--- | It is never declared and never written in a rule: Puppy reserves the name,
--- | emits a constructor for it alongside the declared tokens, and the generated
--- | wrapper appends it to the token stream before handing it to the driver.
--- | Declaring it or mentioning it in a production is a static error, so that
--- | every grammar ends the same way instead of each inventing its own marker.
+-- | It is never declared and never written in a rule: Puppy reserves the name
+-- | and numbers it after the declared tokens. It is not a token, either. The
+-- | generated module has no constructor for it; the driver reads a `Maybe` of
+-- | the token type, and end of input is `Nothing` -- an array running off its
+-- | end, or a source that says there are no more. Declaring it or mentioning it
+-- | in a production is a static error, so that every grammar ends the same way
+-- | instead of each inventing its own marker.
 eofToken :: { name :: String, constructor :: String, display :: String }
 eofToken =
   { name: "EOF"

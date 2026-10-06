@@ -241,7 +241,7 @@ checkNotEof name span role =
       ( "`" <> eofToken.name
           <> "` is reserved for end of input and cannot be "
           <> role
-          <> "; Puppy declares it and the generated wrapper appends it to the token stream"
+          <> "; end of input is not a token, but the tokens running out, and a generated parser sees it without the grammar saying anything"
       )
       span
 
