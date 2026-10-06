@@ -3981,7 +3981,10 @@ puppyInline389_0 puppyValues =
       (Array.fromFoldable (List.reverse xs))
 
 actionTable :: Array Int
-actionTable =
+actionTable = Puppy.Deps.concat puppyActionTablePieces
+
+puppyActionTable0 :: Array Int
+puppyActionTable0 =
   [ 0
   , 0
   , 0
@@ -4982,7 +4985,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable1 :: Array Int
+puppyActionTable1 =
+  [ 0
   , 0
   , 0
   , 0
@@ -5982,7 +5989,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable2 :: Array Int
+puppyActionTable2 =
+  [ 0
   , 0
   , 0
   , 0
@@ -6982,7 +6993,11 @@ actionTable =
   , -303
   , -303
   , -303
-  , -303
+  ]
+
+puppyActionTable3 :: Array Int
+puppyActionTable3 =
+  [ -303
   , -303
   , -303
   , 0
@@ -7982,7 +7997,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable4 :: Array Int
+puppyActionTable4 =
+  [ 0
   , 0
   , 0
   , 0
@@ -8982,7 +9001,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 22
+  ]
+
+puppyActionTable5 :: Array Int
+puppyActionTable5 =
+  [ 22
   , 0
   , 0
   , 0
@@ -9982,7 +10005,11 @@ actionTable =
   , -236
   , -236
   , -236
-  , -236
+  ]
+
+puppyActionTable6 :: Array Int
+puppyActionTable6 =
+  [ -236
   , -236
   , 0
   , 0
@@ -10982,7 +11009,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable7 :: Array Int
+puppyActionTable7 =
+  [ 0
   , 0
   , 0
   , 0
@@ -11982,7 +12013,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable8 :: Array Int
+puppyActionTable8 =
+  [ 0
   , 0
   , 0
   , 0
@@ -12982,7 +13017,11 @@ actionTable =
   , -297
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable9 :: Array Int
+puppyActionTable9 =
+  [ 0
   , -297
   , -297
   , -297
@@ -13982,7 +14021,11 @@ actionTable =
   , 0
   , -272
   , 0
-  , 0
+  ]
+
+puppyActionTable10 :: Array Int
+puppyActionTable10 =
+  [ 0
   , 0
   , 0
   , 0
@@ -14982,16 +15025,13 @@ actionTable =
   , -134
   , -134
   , -134
-  , -134
+  ]
+
+puppyActionTable11 :: Array Int
+puppyActionTable11 =
+  [ -134
   , -134
   , 0
-  , -134
-  , -134
-  , -134
-  , -134
-  , -134
-  , -134
-  , -134
   , -134
   , -134
   , -134
@@ -15001,6 +15041,13 @@ actionTable =
   , -134
   , -134
   , -134
+  , -134
+  , -134
+  , -134
+  , -134
+  , -134
+  , -134
+  , -134
   , 0
   , -135
   , -135
@@ -15982,7 +16029,11 @@ actionTable =
   , -147
   , -147
   , -147
-  , -147
+  ]
+
+puppyActionTable12 :: Array Int
+puppyActionTable12 =
+  [ -147
   , -147
   , -147
   , -147
@@ -16982,7 +17033,11 @@ actionTable =
   , -127
   , -127
   , -127
-  , -127
+  ]
+
+puppyActionTable13 :: Array Int
+puppyActionTable13 =
+  [ -127
   , -127
   , 0
   , -127
@@ -17982,7 +18037,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable14 :: Array Int
+puppyActionTable14 =
+  [ 0
   , 0
   , 0
   , 0
@@ -18982,7 +19041,11 @@ actionTable =
   , 0
   , -172
   , -172
-  , -172
+  ]
+
+puppyActionTable15 :: Array Int
+puppyActionTable15 =
+  [ -172
   , -172
   , 0
   , 0
@@ -19982,7 +20045,11 @@ actionTable =
   , -100
   , -100
   , 0
-  , -100
+  ]
+
+puppyActionTable16 :: Array Int
+puppyActionTable16 =
+  [ -100
   , 0
   , -100
   , 0
@@ -20982,7 +21049,11 @@ actionTable =
   , 0
   , 0
   , 17
-  , -96
+  ]
+
+puppyActionTable17 :: Array Int
+puppyActionTable17 =
+  [ -96
   , 18
   , 19
   , 20
@@ -21982,7 +22053,11 @@ actionTable =
   , -97
   , -97
   , -97
-  , -97
+  ]
+
+puppyActionTable18 :: Array Int
+puppyActionTable18 =
+  [ -97
   , -97
   , -97
   , -97
@@ -22982,7 +23057,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable19 :: Array Int
+puppyActionTable19 =
+  [ 0
   , 0
   , 0
   , 263
@@ -23982,7 +24061,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable20 :: Array Int
+puppyActionTable20 =
+  [ 0
   , 0
   , 251
   , 0
@@ -24982,7 +25065,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable21 :: Array Int
+puppyActionTable21 =
+  [ 0
   , 0
   , 0
   , 0
@@ -25982,7 +26069,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable22 :: Array Int
+puppyActionTable22 =
+  [ 0
   , 0
   , 0
   , 0
@@ -26982,7 +27073,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , -271
+  ]
+
+puppyActionTable23 :: Array Int
+puppyActionTable23 =
+  [ -271
   , 0
   , 0
   , -271
@@ -27982,7 +28077,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable24 :: Array Int
+puppyActionTable24 =
+  [ 0
   , 0
   , 0
   , 0
@@ -28982,7 +29081,11 @@ actionTable =
   , 0
   , 216
   , 0
-  , 217
+  ]
+
+puppyActionTable25 :: Array Int
+puppyActionTable25 =
+  [ 217
   , 0
   , 0
   , 0
@@ -29982,7 +30085,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable26 :: Array Int
+puppyActionTable26 =
+  [ 0
   , 0
   , 0
   , 0
@@ -30982,7 +31089,11 @@ actionTable =
   , -279
   , -279
   , -279
-  , 0
+  ]
+
+puppyActionTable27 :: Array Int
+puppyActionTable27 =
+  [ 0
   , 0
   , 0
   , -279
@@ -31982,7 +32093,11 @@ actionTable =
   , 106
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable28 :: Array Int
+puppyActionTable28 =
+  [ 0
   , 107
   , 108
   , 109
@@ -32982,7 +33097,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable29 :: Array Int
+puppyActionTable29 =
+  [ 0
   , 0
   , 0
   , 0
@@ -33982,7 +34101,11 @@ actionTable =
   , 37
   , 38
   , 39
-  , 0
+  ]
+
+puppyActionTable30 :: Array Int
+puppyActionTable30 =
+  [ 0
   , 114
   , 0
   , 0
@@ -34982,7 +35105,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable31 :: Array Int
+puppyActionTable31 =
+  [ 0
   , 0
   , 0
   , 0
@@ -35982,7 +36109,11 @@ actionTable =
   , 0
   , 100
   , 0
-  , 101
+  ]
+
+puppyActionTable32 :: Array Int
+puppyActionTable32 =
+  [ 101
   , 0
   , 0
   , 0
@@ -36982,7 +37113,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable33 :: Array Int
+puppyActionTable33 =
+  [ 0
   , -334
   , 0
   , 0
@@ -37982,7 +38117,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable34 :: Array Int
+puppyActionTable34 =
+  [ 0
   , 0
   , 0
   , 0
@@ -38982,7 +39121,11 @@ actionTable =
   , -62
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable35 :: Array Int
+puppyActionTable35 =
+  [ 0
   , 0
   , 0
   , 0
@@ -39982,7 +40125,11 @@ actionTable =
   , 0
   , 0
   , 17
-  , 0
+  ]
+
+puppyActionTable36 :: Array Int
+puppyActionTable36 =
+  [ 0
   , 18
   , 19
   , 20
@@ -40982,7 +41129,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable37 :: Array Int
+puppyActionTable37 =
+  [ 0
   , 0
   , 0
   , 0
@@ -41982,7 +42133,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 210
+  ]
+
+puppyActionTable38 :: Array Int
+puppyActionTable38 =
+  [ 210
   , 0
   , 211
   , 0
@@ -42982,7 +43137,11 @@ actionTable =
   , 0
   , 0
   , -202
-  , 0
+  ]
+
+puppyActionTable39 :: Array Int
+puppyActionTable39 =
+  [ 0
   , 0
   , 0
   , 0
@@ -43982,7 +44141,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable40 :: Array Int
+puppyActionTable40 =
+  [ 0
   , 0
   , 0
   , 0
@@ -44982,7 +45145,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable41 :: Array Int
+puppyActionTable41 =
+  [ 0
   , -112
   , 0
   , 0
@@ -45982,7 +46149,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable42 :: Array Int
+puppyActionTable42 =
+  [ 0
   , 0
   , 0
   , 0
@@ -46982,7 +47153,11 @@ actionTable =
   , 0
   , 0
   , -190
-  , 0
+  ]
+
+puppyActionTable43 :: Array Int
+puppyActionTable43 =
+  [ 0
   , 0
   , 0
   , 0
@@ -47982,7 +48157,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable44 :: Array Int
+puppyActionTable44 =
+  [ 0
   , 0
   , 0
   , 0
@@ -48982,7 +49161,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 595
+  ]
+
+puppyActionTable45 :: Array Int
+puppyActionTable45 =
+  [ 595
   , 0
   , 0
   , 0
@@ -49982,7 +50165,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable46 :: Array Int
+puppyActionTable46 =
+  [ 0
   , 0
   , 0
   , 0
@@ -50982,7 +51169,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable47 :: Array Int
+puppyActionTable47 =
+  [ 0
   , 0
   , 0
   , 0
@@ -51982,7 +52173,11 @@ actionTable =
   , 0
   , 0
   , 0
-  , 0
+  ]
+
+puppyActionTable48 :: Array Int
+puppyActionTable48 =
+  [ 0
   , 0
   , 0
   , 0
@@ -52982,7 +53177,11 @@ actionTable =
   , 18
   , 19
   , 20
-  , 0
+  ]
+
+puppyActionTable49 :: Array Int
+puppyActionTable49 =
+  [ 0
   , 0
   , 638
   , 0
@@ -53382,6 +53581,60 @@ actionTable =
   , 0
   , 0
   , 0
+  ]
+
+puppyActionTablePieces :: Array (Array Int)
+puppyActionTablePieces =
+  [ puppyActionTable0
+  , puppyActionTable1
+  , puppyActionTable2
+  , puppyActionTable3
+  , puppyActionTable4
+  , puppyActionTable5
+  , puppyActionTable6
+  , puppyActionTable7
+  , puppyActionTable8
+  , puppyActionTable9
+  , puppyActionTable10
+  , puppyActionTable11
+  , puppyActionTable12
+  , puppyActionTable13
+  , puppyActionTable14
+  , puppyActionTable15
+  , puppyActionTable16
+  , puppyActionTable17
+  , puppyActionTable18
+  , puppyActionTable19
+  , puppyActionTable20
+  , puppyActionTable21
+  , puppyActionTable22
+  , puppyActionTable23
+  , puppyActionTable24
+  , puppyActionTable25
+  , puppyActionTable26
+  , puppyActionTable27
+  , puppyActionTable28
+  , puppyActionTable29
+  , puppyActionTable30
+  , puppyActionTable31
+  , puppyActionTable32
+  , puppyActionTable33
+  , puppyActionTable34
+  , puppyActionTable35
+  , puppyActionTable36
+  , puppyActionTable37
+  , puppyActionTable38
+  , puppyActionTable39
+  , puppyActionTable40
+  , puppyActionTable41
+  , puppyActionTable42
+  , puppyActionTable43
+  , puppyActionTable44
+  , puppyActionTable45
+  , puppyActionTable46
+  , puppyActionTable47
+  , puppyActionTable48
+  , puppyActionTable49
   ]
 
 actionWidth :: Int

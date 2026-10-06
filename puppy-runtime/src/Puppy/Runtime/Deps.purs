@@ -17,6 +17,6 @@ module Puppy.Runtime.Deps
   ) where
 
 import Control.Monad.Rec.Class (class MonadRec)
-import Data.Array (find, index)
+import Data.Array (concat, find, index)
 import Data.Either (Either(..))
 import Data.Maybe (Maybe(..), fromMaybe)

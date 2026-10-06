@@ -19,7 +19,7 @@ import Data.DateTime.Instant (unInstant)
 import Data.Time.Duration (Milliseconds(..))
 import Effect.Class (liftEffect)
 import Effect.Now (now)
-import Puppy.Codegen (Input, generate)
+import Puppy.Codegen (Input, generate, tableBindingOf)
 import Puppy.Syntax as Syntax
 import Puppy.Codegen.Emit (SourceMapping)
 import Puppy.Names as Names
@@ -232,6 +232,21 @@ topLevelNames source = Array.nub (Array.mapMaybe defined (lines source))
 
   entryPoints = [ "main", "mainFrom", "mainRecovering", "mainRecoveringFrom" ]
 
+-- | The most entries any one array literal in a generated module has.
+-- |
+-- | Every literal the generator writes opens on the line after `name =` and
+-- | puts each entry on a line of its own at an indent of two, beginning `[ `
+-- | or `, `. A semantic action spreads over several lines, but everything after
+-- | its first is indented further, so this counts actions rather than lines.
+longestLiteral :: String -> Int
+longestLiteral source = (Array.foldl step { open: false, count: 0, most: 0 } (lines source)).most
+  where
+  step st l
+    | startsWith "  ]" l = st { open = false, most = max st.most st.count }
+    | st.open && (startsWith "  [ " l || startsWith "  , " l) = st { count = st.count + 1 }
+    | SCU.takeRight 2 l == " =" && not (startsWith " " l) = st { open = true, count = 0 }
+    | otherwise = st
+
 withGenerated
   :: (String -> Array SourceMapping -> Aff Unit) -> Aff Unit
 withGenerated k = case generated grammar of
@@ -429,6 +444,39 @@ spec = describe "Puppy.Codegen" do
         Array.filter (not <<< Names.takenByGeneratedCode)
           (topLevelNames out.source)
           `shouldEqual` []
+
+  -- `purs-backend-es` recurses once per element of an array literal, and the
+  -- action table of a grammar of middling size has tens of thousands of
+  -- cells. Nothing here can run that backend, so what is checked is the shape
+  -- that keeps it on its feet: no literal longer than a thousand.
+  describe "long tables" do
+    it "cuts a long table into pieces, and a long list of pieces likewise" do
+      tableBindingOf 2 "t" "Int" [ "1", "2", "3", "4", "5" ] `shouldEqual`
+        joinWith ""
+          [ "\nt :: Array Int\nt = Puppy.Deps.concat puppyTPieces\n"
+          , "\npuppyT0 :: Array Int\npuppyT0 =\n  [ 1\n  , 2\n  ]\n"
+          , "\npuppyT1 :: Array Int\npuppyT1 =\n  [ 3\n  , 4\n  ]\n"
+          , "\npuppyT2 :: Array Int\npuppyT2 =\n  [ 5\n  ]\n"
+          , "\npuppyTPieces :: Array (Array Int)\npuppyTPieces = Puppy.Deps.concat puppyTPiecesPieces\n"
+          , "\npuppyTPieces0 :: Array (Array Int)\npuppyTPieces0 =\n  [ puppyT0\n  , puppyT1\n  ]\n"
+          , "\npuppyTPieces1 :: Array (Array Int)\npuppyTPieces1 =\n  [ puppyT2\n  ]\n"
+          , "\npuppyTPiecesPieces :: Array (Array (Array Int))\npuppyTPiecesPieces =\n  [ puppyTPieces0\n  , puppyTPieces1\n  ]\n"
+          ]
+
+    it "leaves a short table as one literal" do
+      tableBindingOf 2 "t" "Int" [ "1", "2" ] `shouldEqual`
+        "\nt :: Array Int\nt =\n  [ 1\n  , 2\n  ]\n"
+
+    it "writes no literal longer than a thousand entries" do
+      case generated (wide 600) of
+        Left message -> fail ("failed to generate: " <> message)
+        Right out -> do
+          -- Both of these are past the limit for this grammar, so both have
+          -- to have been cut.
+          mentions out.source "actionTable = Puppy.Deps.concat puppyActionTablePieces"
+          mentions out.source
+            "semanticActionTable = Puppy.Deps.concat puppySemanticActionTablePieces"
+          (longestLiteral out.source <= 1000) `shouldEqual` true
 
   it "refuses a module name that is not one" do
     case generatedIn "not a module" grammar of

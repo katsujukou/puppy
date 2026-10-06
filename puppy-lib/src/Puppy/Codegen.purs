@@ -15,6 +15,9 @@ module Puppy.Codegen
   , Generated
   , generate
   , marker
+  -- Exposed for the tests: how a long table is cut up is easier to check on a
+  -- short one.
+  , tableBindingOf
   ) where
 
 import Prelude
@@ -26,7 +29,7 @@ import Data.Maybe (Maybe(..), fromMaybe, isJust, isNothing, maybe)
 import Data.Char (toCharCode)
 import Data.Int (hexadecimal, toStringAs)
 import Data.String.CodeUnits as SCU
-import Data.String.Common (joinWith)
+import Data.String.Common (joinWith, toUpper)
 import Data.Either (Either(..))
 import Data.Tuple (Tuple(..), fst)
 import Puppy.Codegen.Emit (Emitter, SourceMapping)
@@ -469,8 +472,7 @@ terminalFunctions input e =
             <> quoted "a value was asked for a token this grammar does not declare"
         )
         valueNote
-    # Emit.write "\nterminalNames :: Array String\n"
-    # Emit.write (arrayBinding "terminalNames" (map (quoted <<< _.display) tokens))
+    # Emit.write (tableBinding "terminalNames" "String" (map (quoted <<< _.display) tokens))
     # Emit.write "\nterminalName :: Int -> String\nterminalName puppyIndex = case Puppy.Deps.index terminalNames puppyIndex of\n"
     # Emit.write (line 2 "Puppy.Deps.Just puppyFound -> puppyFound")
     # Emit.write (line 2 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError")
@@ -578,6 +580,41 @@ terminalFunctions input e =
       "Puppy.Deps.Just (" <> decl.constructor <> " " <> bound <> ")"
     else "Puppy.Deps.Just " <> decl.constructor
 
+-- | How many entries one array literal in a generated module may hold.
+-- |
+-- | A workaround, and not for anything wrong here. `purs-backend-es` (1.4.3)
+-- | looks through every array literal for a failure with `findMap`, and the
+-- | `Foldable Literal` instance it does that through gets its `foldl` from
+-- | `foldlDefault` -- one composed function per element, called in one go --
+-- | so a long enough literal runs it out of stack. Its published build does
+-- | between five and ten thousand elements. The action table has a cell for
+-- | every state and terminal, so a grammar of middling size passes that
+-- | without trying.
+-- |
+-- | So anything longer than this is written as several literals joined at load
+-- | time instead -- see `tableBinding`. Well under the limit, because the limit
+-- | is a property of somebody else's stack. Once a release of `purs-backend-es`
+-- | folds a literal without the default, this and the splitting can go.
+chunkSize :: Int
+chunkSize = 1000
+
+-- | An array cut into consecutive pieces of at most `size`.
+chunksOf :: forall a. Int -> Array a -> Array (Array a)
+chunksOf size xs
+  | Array.null xs = []
+  | otherwise = map
+      (\i -> Array.slice (i * size) ((i + 1) * size) xs)
+      (Array.range 0 ((Array.length xs - 1) / size))
+
+-- | The prefix the pieces of a split table are named with.
+-- |
+-- | Under `puppy`, which no start symbol may begin with, so that a piece can
+-- | never be a name the grammar also wants.
+pieceStem :: String -> String
+pieceStem name
+  | SCU.take 5 name == "puppy" = name
+  | otherwise = "puppy" <> toUpper (SCU.take 1 name) <> SCU.drop 1 name
+
 -- | A multi-line array literal bound to a name, which is what these all want
 -- | to be.
 arrayBinding :: String -> Array String -> String
@@ -588,6 +625,50 @@ arrayBinding name entries = case Array.uncons entries of
       <> line 2 ("[ " <> head)
       <> joinWith "" (map (line 2 <<< append ", ") tail)
       <> line 2 "]"
+
+-- | A table, with its type, as array literals no longer than `chunkSize`.
+-- |
+-- | A short table is one literal, written the way it always was. A long one is
+-- | cut into pieces, each its own top-level literal, and the table is their
+-- | `concat`. The list of pieces is a table like any other, and is cut the
+-- | same way if it is long too, so no literal anywhere is longer than
+-- | `chunkSize` however large the grammar.
+-- |
+-- | The joining happens once, when the module is loaded. What the driver reads
+-- | afterwards is the same flat array, indexed the same way.
+tableBinding :: String -> String -> Array String -> String
+tableBinding = tableBindingOf chunkSize
+
+-- | `tableBinding`, with the size of a piece given. Only for the tests, which
+-- | can then cut a table of five into pieces of two rather than building one
+-- | of a million to see the list of pieces cut as well.
+tableBindingOf :: Int -> String -> String -> Array String -> String
+tableBindingOf size name entryType entries =
+  signature name entryType <> body
+  where
+  body
+    | Array.length entries <= size = arrayBinding name entries
+    | otherwise =
+        let
+          stem = pieceStem name
+
+          pieces = chunksOf size entries
+
+          pieceName i = stem <> show i
+
+          listName = stem <> "Pieces"
+        in
+          name <> " = Puppy.Deps.concat " <> listName <> "\n"
+            <> joinWith ""
+              ( Array.mapWithIndex
+                  (\i piece -> signature (pieceName i) entryType <> arrayBinding (pieceName i) piece)
+                  pieces
+              )
+            <> tableBindingOf size listName ("(Array " <> entryType <> ")")
+              (Array.mapWithIndex (\i _ -> pieceName i) pieces)
+
+signature :: String -> String -> String
+signature name entryType = "\n" <> name <> " :: Array " <> entryType <> "\n"
 
 --------------------------------------------------------------------------------
 -- The tables
@@ -606,8 +687,8 @@ renderRuntimeAction = case _ of
 
 productionTable :: Input -> Emitter -> Emitter
 productionTable input = Emit.write
-  ( "\nproductionTable :: Array Puppy.Runtime.ProductionInfo\n"
-      <> arrayBinding "productionTable" (map entry input.grammar.productions)
+  ( tableBinding "productionTable" "Puppy.Runtime.ProductionInfo"
+      (map entry input.grammar.productions)
       <> "\nproductionAt :: Int -> Puppy.Runtime.ProductionInfo\nproductionAt puppyIndex = case Puppy.Deps.index productionTable puppyIndex of\n"
       <> line 2 "Puppy.Deps.Just puppyFound -> puppyFound"
       <> line 2 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError"
@@ -635,30 +716,59 @@ asCore input p =
     N n -> Core.Nonterminal
       (fromMaybe "?" (Array.index input.grammar.nonterminals n))
 
+-- | One function per production, split into literals the way `tableBinding`
+-- | splits a table and for the same reason. It cannot simply be one: each
+-- | entry goes through the emitter, so that the author's code in it can be
+-- | traced back to the grammar.
 semanticActionTable :: Input -> Emitter -> Emitter
 semanticActionTable input e =
-  Emit.write
-    "\nsemanticActionTable :: Array (Array Puppy.Runtime.Value -> Puppy.Runtime.Value)\nsemanticActionTable =\n"
-    e
-    # entries
-    # Emit.write (line 2 "]")
+  written
     # Emit.write
         "\nsemanticActionAt :: Int -> Array Puppy.Runtime.Value -> Puppy.Runtime.Value\nsemanticActionAt puppyIndex = case Puppy.Deps.index semanticActionTable puppyIndex of\n"
     # Emit.write (line 2 "Puppy.Deps.Just puppyFound -> puppyFound")
     # Emit.write (line 2 "Puppy.Deps.Nothing -> Puppy.Runtime.internalError")
     # Emit.write (line 4 ("(" <> quoted "no semantic action " <> " <> show puppyIndex)"))
   where
-  entries start = Array.foldl one start
-    (Array.mapWithIndex Tuple input.grammar.productions)
+  name = "semanticActionTable"
 
-  one acc (Tuple i prod) =
-    Emit.write (spaces 2 <> (if i == 0 then "[ " else ", ")) acc
+  entryType = "(Array Puppy.Runtime.Value -> Puppy.Runtime.Value)"
+
+  numbered = Array.mapWithIndex Tuple input.grammar.productions
+
+  written
+    | Array.length numbered <= chunkSize = literal name numbered e
+    | otherwise =
+        let
+          stem = pieceStem name
+
+          pieces = Array.mapWithIndex Tuple (chunksOf chunkSize numbered)
+
+          pieceName i = stem <> show i
+        in
+          Emit.write
+            (signature name entryType <> name <> " = Puppy.Deps.concat " <> stem <> "Pieces\n")
+            e
+            # flip (Array.foldl (\acc (Tuple i piece) -> literal (pieceName i) piece acc)) pieces
+            # Emit.write
+                ( tableBinding (stem <> "Pieces") ("(Array " <> entryType <> ")")
+                    (map (pieceName <<< fst) pieces)
+                )
+
+  -- The index each action is written with is the production's own, not its
+  -- place in the piece: it names the helpers an inlined rule's action became.
+  literal binding entries acc =
+    Array.foldl one
+      (Emit.write (signature binding entryType <> binding <> " =\n") acc)
+      (Array.mapWithIndex Tuple entries)
+      # Emit.write (line 2 "]")
+
+  one acc (Tuple k (Tuple i prod)) =
+    Emit.write (spaces 2 <> (if k == 0 then "[ " else ", ")) acc
       # semanticAction input 6 i prod
 
 sparseTable :: String -> String -> Array (Array String) -> String
 sparseTable name entryType rows =
-  "\n" <> name <> " :: Array (Array " <> entryType <> ")\n"
-    <> arrayBinding name (map row rows)
+  tableBinding name ("(Array " <> entryType <> ")") (map row rows)
   where
   row entries =
     if Array.null entries then "[]"
@@ -700,8 +810,7 @@ rowsByState count stateOf render cells =
 -- | supposed to avoid.
 actionTable :: Input -> Emitter -> Emitter
 actionTable input = Emit.write
-  ( "\nactionTable :: Array Int\n"
-      <> arrayBinding "actionTable" cells
+  ( tableBinding "actionTable" "Int" cells
       <> "\nactionWidth :: Int\nactionWidth = "
       <> show width
       <> "\n"
